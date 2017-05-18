@@ -1,0 +1,16 @@
+a = 4
+b = 3
+c = 0
+if (a >= b)
+    if (a == b)
+        c = 10
+    else{   
+        c = 20
+        b = 2
+    }
+for (i = 0; i < 3; i = i+1) {
+    a = a+c
+    b = -(b+4)
+}
+print a
+print b
