@@ -60,10 +60,10 @@ class StatNode:
         self.children = None
 
     def perform_operation(self):
-        pass
+        raise NotImplementedError
 
-    def emit_code(self):
-        pass
+    def emit_code(self)->str:
+        return NotImplemented
 
 
 class ExpNode:
@@ -74,8 +74,8 @@ class ExpNode:
     def perform_operation(self):
         return NotImplemented
 
-    def emit_code(self):
-        pass
+    def emit_code(self)->str:
+        return NotImplemented
 
 
 class ConstExpNode(ExpNode):
