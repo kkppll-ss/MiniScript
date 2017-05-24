@@ -207,9 +207,8 @@ class StatListNode(StatNode):
             child.perform_operation()
 
     def emit_code(self):
-        list_code = ''
-        for stat in self.children:
-            list_code += (stat.emit_code() + '\n')
+        list_code_array = [stat.emit_code() for stat in self.children]
+        list_code = '\n'.join(list_code_array)
         return list_code
 
 
@@ -535,5 +534,5 @@ else:
         print("the const table is {}".format(constTable))
         print("the name table is {}".format(nameTable))
         print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
-        result.perform_operation()
+        # result.perform_operation()
         print(result.emit_code())
