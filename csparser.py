@@ -2,6 +2,7 @@ import json
 from collections import OrderedDict
 from typing import Optional
 
+import collections
 import ply.yacc as yacc
 import sys
 from cslexer import tokens
@@ -18,7 +19,7 @@ precedence = (
 )
 
 
-class Const:
+class Value:
     def __init__(self, dtype: str, value):
         self.dtype = dtype
         self.value = value
@@ -29,12 +30,63 @@ class Const:
     def __repr__(self):
         return str(self)
 
+    def _check_type(self, other):
+        if self.dtype != other.dtype:
+            raise TypeError('the compare of = for {} and {} is error, the first is of type {} '
+                            'but the latter is of type {}'.format(self, other, self.dtype, other.dtype))
+
     def __eq__(self, other):
-        return self.dtype == other.dtype and self.value == other.value
+        return Value('bool', self.dtype == other.dtype and self.value == other.value)
+
+    def __le__(self, other):
+        self._check_type(other)
+        return Value('bool', self.value < other.value)
+
+    def __ge__(self, other):
+        self._check_type(other)
+        return Value('bool', self.value >= other.value)
+
+    def __lt__(self, other):
+        self._check_type(other)
+        return Value('bool', self.value < other.value)
+
+    def __gt__(self, other):
+        self._check_type(other)
+        return Value('bool', self.value > other.value)
+
+    def __ne__(self, other):
+        return Value('bool', not(self == other))
+
+    def __add__(self, other):
+        self._check_type(other)
+        return Value(self.dtype, self.value + other.value)
+
+    def __sub__(self, other):
+        self._check_type(other)
+        if self.dtype != 'int' and self.dtype != 'real':
+            raise TypeError('to subtract, the type of operand must be number')
+        return Value(self.dtype, self.value - other.value)
+
+    def __mul__(self, other):
+        self._check_type(other)
+        if self.dtype != 'int' and self.dtype != 'real':
+            raise TypeError('to multiply, the type of operand must be number')
+        return Value(self.dtype, self.value * other.value)
+
+    def __truediv__(self, other):
+        self._check_type(other)
+        if self.dtype != 'int' and self.dtype != 'real':
+            raise TypeError('to divide, the type of operand must be number')
+        return Value(self.dtype, self.value / other.value)
+
+    def __bool__(self):
+        if self.dtype != 'bool':
+            raise TypeError('you should check bool with a bool value')
+        return self.value
 
 
 symbolTable = {}  # type: {str}
-constTable = []  # type: [Const]
+constTable = []  # type: [Value]
 nameTable = []  # type: [str]
 
 
@@ -50,7 +102,10 @@ def label_counter(init_value=0):
         old_label_count = counter.value
         counter.value += 1
         return old_label_count
+
     return increment
+
+
 next_label = label_counter()
 
 
@@ -62,7 +117,7 @@ class StatNode:
     def perform_operation(self):
         raise NotImplementedError
 
-    def emit_code(self)->str:
+    def emit_code(self) -> str:
         return NotImplemented
 
 
@@ -74,14 +129,14 @@ class ExpNode:
     def perform_operation(self):
         return NotImplemented
 
-    def emit_code(self)->str:
+    def emit_code(self) -> str:
         return NotImplemented
 
 
 class ConstExpNode(ExpNode):
     def __init__(self, index: int):
         super().__init__()
-        self.type = 'int'
+        self.type = 'const'
         self.children = {'index': index}
 
     def perform_operation(self):
@@ -169,6 +224,47 @@ class BinaryExpNode(ExpNode):
         return left_code + '\n' + right_code + '\n' + operator_code
 
 
+class CompareExpNode(ExpNode):
+    def __init__(self, left: ExpNode, right: ExpNode, operator: str):
+        super().__init__()
+        self.type = 'compare'
+        self.children = OrderedDict([('operator', operator), ('left', left), ('right', right)])
+
+    def perform_operation(self):
+        [operator, left, right] = self.children.values()
+        if operator == '!=':
+            return left.perform_operation() != right.perform_operation()
+        elif operator == '==':
+            return left.perform_operation() == right.perform_operation()
+        elif operator == '>':
+            return left.perform_operation() > right.perform_operation()
+        elif operator == '<':
+            return left.perform_operation() < right.perform_operation()
+        elif operator == '>=':
+            return left.perform_operation() >= right.perform_operation()
+        elif operator == '<=':
+            return left.perform_operation() <= right.perform_operation()
+
+    def emit_code(self):
+        [operator, left, right] = self.children.values()
+        left_code = left.emit_code()
+        right_code = right.emit_code()
+        operator_code = 'UNKNOWN_COMPARE_OPERATOR'
+        if operator == '<':
+            operator_code = 'COMPARE_OP 0'
+        elif operator == '<=':
+            operator_code = 'COMPARE_OP 1'
+        elif operator == '==':
+            operator_code = 'COMPARE_OP 2'
+        elif operator == '!=':
+            operator_code = 'COMPARE_OP 3'
+        elif operator == '>':
+            operator_code = 'COMPARE_OP 4'
+        elif operator == '>=':
+            operator_code = 'COMPARE_OP 5'
+        return left_code + '\n' + right_code + '\n' + operator_code
+
+
 class UnaryExpNode(ExpNode):
     def __init__(self, exp: ExpNode, operator: str):
         super().__init__()
@@ -193,10 +289,8 @@ class UnaryExpNode(ExpNode):
         return exp_code + '\n' + operator_code
 
 
-class StatListNode(StatNode):
+class StatListNode:
     def __init__(self, current_stat: StatNode):
-        super().__init__()
-        self.type = 'statement_list'
         self.children = [current_stat]
 
     def prepend_stat(self, stat: StatNode):
@@ -210,6 +304,26 @@ class StatListNode(StatNode):
         list_code_array = [stat.emit_code() for stat in self.children]
         list_code = '\n'.join(list_code_array)
         return list_code
+
+
+class ProgramNode(StatNode):
+    def __init__(self, stat_list: StatListNode):
+        super().__init__()
+        self.type = 'program'
+        self.children = {'stat_list': stat_list}
+
+    def perform_operation(self):
+        self.children['stat_list'].perform_operation()
+
+    def emit_code(self):
+        item = Value('NoneType', None)
+        if item not in constTable:
+            constTable.append(item)
+        index = constTable.index(item)
+        stat_code = self.children['stat_list'].emit_code()
+        return_code = """LOAD_CONST {}
+RETURN_VALUE""".format(index)
+        return stat_code + '\n' + return_code
 
 
 class CompoundStatNode(StatNode):
@@ -246,7 +360,7 @@ class BreakStatNode(StatNode):
     def __init__(self):
         super().__init__()
         self.type = 'break'
-        self.children = NotImplemented
+        self.children = None
 
     def emit_code(self):
         return 'BREAK_LOOP'
@@ -286,14 +400,15 @@ class WhileStatNode(StatNode):
         [condition, body] = self.children.values()
         condition_code = condition.emit_code()
         body_code = body.emit_code()
-        while_code = """SETUP_LOOP
-L{0}:
-{1}
-POP_JUMP_IF_FALSE L{2}
-{3}
-JUMP_ABSOLUTE L{0}
-L{2}:
-POP_BLOCK""".format(next_label(), condition_code, next_label(), body_code)
+        while_code = """SETUP_LOOP L{0}
+L{1}:
+{2}
+POP_JUMP_IF_FALSE L{3}
+{4}
+JUMP_ABSOLUTE L{1}
+L{3}:
+POP_BLOCK
+L{0}:""".format(next_label(), next_label(), condition_code, next_label(), body_code)
         return while_code
 
 
@@ -318,16 +433,17 @@ class ForStatNode(StatNode):
         condition_code = condition.emit_code()
         loop_code = loop.emit_code()
         for_code = """{0}
-SETUP_LOOP
-L{1}:
-{2}
-POP_JUMP_IF_FALSE L{3}
-{4}
+SETUP_LOOP L{1}
+L{2}:
+{3}
+POP_JUMP_IF_FALSE L{4}
 {5}
-JUMP_ABSOLUTE L{1}
-L{3}:
-POP_BLOCK""".format(init_code, next_label(), condition_code, next_label(),
-                    body.emit_code(), loop_code)
+{6}
+JUMP_ABSOLUTE L{2}
+L{4}:
+POP_BLOCK
+L{1}:""".format(init_code, next_label(), next_label(), condition_code, next_label(),
+                body.emit_code(), loop_code)
         return for_code
 
 
@@ -381,10 +497,19 @@ class FunctionExpNode(ExpNode):
 
 
 class SyntaxTreeJSONEncoder(json.JSONEncoder):
-    def default(self, tree_node: StatNode or ExpNode):
+    def default(self, tree_node: StatNode or ExpNode or StatListNode):
         if isinstance(tree_node, StatNode) or isinstance(tree_node, ExpNode):
             return OrderedDict([('type', tree_node.type), ('children', tree_node.children)])
+        if isinstance(tree_node, StatListNode):
+            return OrderedDict([('children', tree_node.children)])
         return json.JSONEncoder.default(self, tree_node)
+
+
+def p_program(p):
+    """
+    program : statement_list
+    """
+    p[0] = ProgramNode(p[1])
 
 
 def p_statement_list(p):
@@ -475,15 +600,20 @@ def p_binary_expression(p):
               | expression DIVIDE expression
               | expression AND expression
               | expression OR expression
-              | expression EQUAL expression
-              | expression NOT_EQUAL expression
-              | expression GREATER expression
-              | expression LESS expression
-              | expression GREATER_EQUAL expression
-              | expression LESS_EQUAL expression
-              
     """
     p[0] = BinaryExpNode(p[1], p[3], p[2])
+
+
+def p_compare_expression(p):
+    """
+    expression :   expression EQUAL expression
+                 | expression NOT_EQUAL expression
+                 | expression GREATER expression
+                 | expression LESS expression
+                 | expression GREATER_EQUAL expression
+                 | expression LESS_EQUAL expression
+    """
+    p[0] = CompareExpNode(p[1], p[3], p[2])
 
 
 def p_unary_expression(p):
@@ -505,7 +635,7 @@ def p_expression_int(p):
     """
     expression : INT
     """
-    exp_item = Const('int', p[1])
+    exp_item = Value('int', p[1])
     if exp_item not in constTable:
         constTable.append(exp_item)
     p[0] = ConstExpNode(constTable.index(exp_item))
@@ -515,7 +645,7 @@ def p_expression_real(p):
     """
     expression : REAL
     """
-    exp_item = Const('real', p[1])
+    exp_item = Value('real', p[1])
     if exp_item not in constTable:
         constTable.append(exp_item)
     p[0] = ConstExpNode(constTable.index(exp_item))
@@ -525,7 +655,7 @@ def p_expression_string(p):
     """
     expression : STRING
     """
-    exp_item = Const('str', p[1])
+    exp_item = Value('str', p[1])
     if exp_item not in constTable:
         constTable.append(exp_item)
     p[0] = ConstExpNode(constTable.index(exp_item))
@@ -544,16 +674,13 @@ def p_error(p):
                                                                                   p.value))
 
 
-parser = yacc.yacc()
-if len(sys.argv) < 2:
-    print('please type in the file name')
-else:
-    program_name = sys.argv[1]
-    with open(program_name, 'r') as program:
-        content = program.read()
-        result = parser.parse(content)
-        print("the const table is {}".format(constTable))
-        print("the name table is {}".format(nameTable))
-        print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
-        # result.perform_operation()
-        print(result.emit_code())
+def generate_code(program: str):
+    parser = yacc.yacc()
+    result = parser.parse(program)
+    print("the JSON format is:")
+    print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
+    code = result.emit_code()
+    print("the code is")
+    print(code)
+    return{'co_code': code, 'co_consts': constTable, 'co_names': nameTable}
+

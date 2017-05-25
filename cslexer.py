@@ -52,7 +52,7 @@ def t_REAL(t):
 
 def t_STRING(t):
     r'"[^"]*"'
-    t.value = t.value[1:len(t.value)]
+    t.value = t.value[1:len(t.value)-1]
     return t
 
 

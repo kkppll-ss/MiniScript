@@ -1,16 +1,16 @@
-a = 4
-b = 3
-c = 0
-if (a >= b)
-    if (a == b)
-        c = 10
-    else{   
-        c = 20
-        b = 2
-    }
-for (i = 0; i < 3; i = i+1) {
-    a = a+c
-    b = -(b+4)
+next_last = 0
+last = 1
+for (i = 2; i < 100; i = i + 1){
+    current = last + next_last
+    if (current > 100)
+        break
+    next_last = last
+    last = current
 }
-print a
-print b
+print next_last
+print last
+print current
+a = "Hello "
+b = "world"
+c = a + b
+print c

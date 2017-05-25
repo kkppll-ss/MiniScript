@@ -96,6 +96,8 @@ class VirtualMachine(object):
     def make_frame(self, code, call_args=None, local_names=None):
         if call_args is None:
             call_args = {}
+        if local_names is None:
+            local_names = {}
         local_names.update(call_args)
         frame = Frame(code, local_names, self.current_frame)
         return frame
@@ -133,13 +135,13 @@ class VirtualMachine(object):
     def parse_byte_and_args(self):
         f = self.current_frame
         op_offset = f.last_instruction
-        byte_name, arg_val = f.code_obj.co_code[op_offset]
+        byte_name, arg_val = f.code_obj['co_code'][op_offset]
         f.last_instruction += 1
-        if arg_val:
+        if arg_val is not None:
             if byte_name in bytecode.HAVE_CONST:  # Look up a constant
-                arg = f.code_obj.co_consts[arg_val]
+                arg = f.code_obj['co_consts'][arg_val]
             elif byte_name in bytecode.HAVE_NAME:  # Look up a name
-                arg = f.code_obj.co_names[arg_val]
+                arg = f.code_obj['co_names'][arg_val]
             else:
                 arg = arg_val
             argument = [arg]
@@ -216,10 +218,6 @@ class VirtualMachine(object):
         frame = self.current_frame
         if name in frame.local_names:
             val = frame.local_names[name]
-        elif name in frame.global_names:
-            val = frame.global_names[name]
-        elif name in frame.builtin_names:
-            val = frame.builtin_names[name]
         else:
             raise NameError("name '%s' is not defined" % name)
         self.current_frame.push(val)
@@ -375,8 +373,8 @@ class VirtualMachine(object):
 
     # Blocks
 
-    def byte_SETUP_LOOP(self, dest):
-        self.current_frame.push_block('loop', dest)
+    def byte_SETUP_LOOP(self, destination):
+        self.current_frame.push_block('loop', destination)
 
     def byte_BREAK_LOOP(self):
         return 'break'
@@ -414,7 +412,12 @@ class VirtualMachine(object):
     #     retval = func(*posargs)
     #     self.current_frame.push(retval)
     #
-    # def byte_RETURN_VALUE(self):
-    #     self.return_value = self.current_frame.pop()
-    #     return "return"
+    def byte_RETURN_VALUE(self):
+        self.return_value = self.current_frame.pop()
+        return "return"
+
+    # print
+    def byte_PRINT_EXPR(self):
+        value = self.current_frame.pop()
+        print(value)
 
