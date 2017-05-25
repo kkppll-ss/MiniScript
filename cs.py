@@ -1,8 +1,7 @@
-import os
 import sys
 
 import csparser
-import pyvm2
+import vm
 import assembler
 import pickle
 
@@ -18,10 +17,10 @@ def compile(file_name: str, output_name: str):
 
 
 def run(file_name: str):
-    vm = pyvm2.VirtualMachine()
+    virtual_machine = vm.VirtualMachine()
     with open(file_name, 'rb') as file:
         code = pickle.load(file)
-        vm.run_code(code)
+        virtual_machine.run_code(code)
 
 
 if __name__ == '__main__':
