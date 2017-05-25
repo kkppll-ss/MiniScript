@@ -242,6 +242,19 @@ class AssignStatNode(StatNode):
         return exp_code + '\n' + assign_code
 
 
+class BreakStatNode(StatNode):
+    def __init__(self):
+        super().__init__()
+        self.type = 'break'
+        self.children = NotImplemented
+
+    def emit_code(self):
+        return 'BREAK_LOOP'
+
+    def perform_operation(self):
+        raise NotImplementedError
+
+
 class PrintStatNode(StatNode):
     def __init__(self, exp: ExpNode):
         super().__init__()
@@ -394,6 +407,7 @@ def p_statement(p):
             |  for_statement
             |  assign_statement
             |  print_statement
+            |  break_statement
     """
     p[0] = p[1]
 
@@ -437,6 +451,13 @@ def p_assign_statement(p):
     if p[1] not in nameTable:
         nameTable.append(p[1])
     p[0] = AssignStatNode(nameTable.index(p[1]), p[3])
+
+
+def p_break_statement(p):
+    """
+    break_statement : BREAK
+    """
+    p[0] = BreakStatNode()
 
 
 def p_print_statement(p):
