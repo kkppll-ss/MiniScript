@@ -1,5 +1,3 @@
-from typing import Optional
-
 import re
 import bytecode
 
@@ -40,7 +38,7 @@ def substitute_labels(instructions):
     return ret_instructions
 
 
-def assemble(program: str):
+def convert(program: str):
     return substitute_labels(unpack_instructions(program))
 
 

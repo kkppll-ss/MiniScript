@@ -1,16 +1,14 @@
-next_last = 0
-last = 1
-for (i = 2; i < 100; i = i + 1){
-    current = last + next_last
-    if (current > 100)
-        break
-    next_last = last
-    last = current
+fibonacci = function(n) {
+    pprint = function(k){
+        print k
+        return 0
+    }
+    pprint(n)
+    return n
 }
-print next_last
-print last
-print current
+print fibonacci(6)
 a = "Hello "
 b = "world"
 c = a + b
 print c
+return 0

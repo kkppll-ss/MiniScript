@@ -9,7 +9,9 @@ reserved_word = {
     'and': 'AND',
     'or': 'OR',
     'not': 'NOT',
-    'break': 'BREAK'
+    'break': 'BREAK',
+    'function': 'FUNCTION',
+    'return': 'RETURN'
 }
 
 tokens = [
@@ -23,6 +25,7 @@ tokens = [
              'DIVIDE',
              'UNARY_MINUS',
              'INCOMPLETE_IF',
+             'WITHOUT_LEFT_PAREN',
              'ASSIGN',
              'EQUAL',
              'NOT_EQUAL',
@@ -35,6 +38,7 @@ tokens = [
              'LEFT_PAREN',
              'RIGHT_PAREN',
              'SEMICOLON',
+             'COMMA'
          ] + list(reserved_word.values())
 
 
@@ -79,9 +83,10 @@ t_LESS = r'<'
 t_GREATER_EQUAL = r'>='
 t_LESS_EQUAL = r'<='
 t_ignore = ' \t'
+t_COMMA = r','
 
 
-def t_newline(t):
+def t_NEWLINE(t):
     r'\n+'
     t.lexer.lineno += len(t.value)
 

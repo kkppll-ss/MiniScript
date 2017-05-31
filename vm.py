@@ -7,16 +7,17 @@ import collections
 import operator
 
 import bytecode
+from value import *
 
 
 class Frame(object):
-    def __init__(self, code_obj, local_names, prev_frame):
-        self.code_obj = code_obj
-        self.local_names = local_names
+    def __init__(self, code_obj: CodeObj, local_names: {str: Value}, prev_frame):
+        self.code_obj = code_obj  # type: CodeObj
+        self.local_names = local_names  # type: {str: Value}
         self.prev_frame = prev_frame
-        self.stack = []
+        self.stack = []  # type: [Value]
         self.last_instruction = 0
-        self.block_stack = []
+        self.block_stack = []  # type: [Block]
 
     # Data stack manipulation
     def top(self):
@@ -55,32 +56,6 @@ class Frame(object):
 
 Block = collections.namedtuple("Block", "type, handler, stack_height")
 
-
-# class Function(object):
-#     __slots__ = [
-#         'func_code', 'func_name', 'func_defaults', 'func_globals',
-#         'func_locals', 'func_dict', 'func_closure',
-#         '__name__', '__dict__', '__doc__',
-#         '_vm', '_func',
-#     ]
-#
-#     def __init__(self, name, code, globs, defaults, closure, vm):
-#         self._vm = vm
-#         self.func_code = code
-#         self.func_name = self.__name__ = name or code.co_name
-#         self.func_defaults = tuple(defaults)
-#         self.func_globals = globs
-#         self.func_locals = self._vm.frame.local_names
-#         self.__dict__ = {}
-#         self.__doc__ = code.co_consts[0] if code.co_consts else None
-#
-#     def __call__(self, *args):
-#         callargs = inspect.getcallargs(self._func, *args, **kwargs)
-#         frame = self._vm.make_frame(
-#             self.func_code, callargs, self.func_globals, {}
-#         )
-#         return self._vm.run_frame(frame)
-#
 
 class VirtualMachineError(Exception):
     pass
@@ -135,13 +110,13 @@ class VirtualMachine(object):
     def parse_byte_and_args(self):
         f = self.current_frame
         op_offset = f.last_instruction
-        byte_name, arg_val = f.code_obj['co_code'][op_offset]
+        byte_name, arg_val = f.code_obj.code[op_offset]
         f.last_instruction += 1
         if arg_val is not None:
             if byte_name in bytecode.HAVE_CONST:  # Look up a constant
-                arg = f.code_obj['co_consts'][arg_val]
+                arg = f.code_obj.const_list[arg_val]
             elif byte_name in bytecode.HAVE_NAME:  # Look up a name
-                arg = f.code_obj['co_names'][arg_val]
+                arg = f.code_obj.name_list[arg_val]
             else:
                 arg = arg_val
             argument = [arg]
@@ -202,7 +177,10 @@ class VirtualMachine(object):
         self.pop_frame()
         return self.return_value
 
-    # Stack manipulation
+    def call_function(self, func: Function, arguments: []):
+        call_args = dict(zip(func.parameter_list, arguments))
+        frame = self.make_frame(func.code_obj, call_args)
+        return self.run_frame(frame)
 
     def byte_LOAD_CONST(self, const):
         self.current_frame.push(const)
@@ -392,26 +370,14 @@ class VirtualMachine(object):
     def byte_POP_BLOCK(self):
         self.current_frame.pop_block()
 
-    # Functions
+    def byte_CALL_FUNCTION(self):
+        func_value = self.current_frame.pop()
+        func = func_value.value
+        parameter_len = len(func.parameter_list)
+        arguments = self.current_frame.popn(parameter_len)
+        ret_value = self.call_function(func, arguments)
+        self.current_frame.push(ret_value)
 
-    # def byte_MAKE_FUNCTION(self, argc):
-    #     name = self.current_frame.pop()
-    #     code = self.current_frame.pop()
-    #     defaults = self.current_frame.popn(argc)
-    #     globs = self.current_frame.global_names
-    #     # TODO: if we're not supporting kwargs, do we need the defaults?
-    #     fn = Function(name, code, globs, defaults, None, self)
-    #     self.current_frame.push(fn)
-    #
-    # def byte_CALL_FUNCTION(self, arg):
-    #     lenKw, lenPos = divmod(arg, 256)  # KWargs not supported in byterun
-    #     posargs = self.current_frame.popn(lenPos)
-    #
-    #     func = self.current_frame.pop()
-    #     frame = self.current_frame
-    #     retval = func(*posargs)
-    #     self.current_frame.push(retval)
-    #
     def byte_RETURN_VALUE(self):
         self.return_value = self.current_frame.pop()
         return "return"
@@ -420,4 +386,3 @@ class VirtualMachine(object):
     def byte_PRINT_EXPR(self):
         value = self.current_frame.pop()
         print(value)
-

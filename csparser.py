@@ -1,15 +1,16 @@
 import json
 from collections import OrderedDict
 from typing import Optional
-
-import collections
 import ply.yacc as yacc
 import sys
 from cslexer import tokens
+from value import Value, Function, CodeObj
 
 precedence = (
     ('nonassoc', 'INCOMPLETE_IF'),
     ('nonassoc', 'ELSE'),
+    ('nonassoc', 'WITHOUT_LEFT_PAREN'),
+    ('nonassoc', 'LEFT_PAREN'),
     ('left', 'AND', 'OR'),
     ('left', 'EQUAL', 'NOT_EQUAL'),
     ('left', 'GREATER', 'LESS', 'GREATER_EQUAL', 'LESS_EQUAL'),
@@ -18,76 +19,10 @@ precedence = (
     ('right', 'NOT', 'UNARY_MINUS')
 )
 
-
-class Value:
-    def __init__(self, dtype: str, value):
-        self.dtype = dtype
-        self.value = value
-
-    def __str__(self):
-        return str(self.value)
-
-    def __repr__(self):
-        return str(self)
-
-    def _check_type(self, other):
-        if self.dtype != other.dtype:
-            raise TypeError('the compare of = for {} and {} is error, the first is of type {} '
-                            'but the latter is of type {}'.format(self, other, self.dtype, other.dtype))
-
-    def __eq__(self, other):
-        return Value('bool', self.dtype == other.dtype and self.value == other.value)
-
-    def __le__(self, other):
-        self._check_type(other)
-        return Value('bool', self.value < other.value)
-
-    def __ge__(self, other):
-        self._check_type(other)
-        return Value('bool', self.value >= other.value)
-
-    def __lt__(self, other):
-        self._check_type(other)
-        return Value('bool', self.value < other.value)
-
-    def __gt__(self, other):
-        self._check_type(other)
-        return Value('bool', self.value > other.value)
-
-    def __ne__(self, other):
-        return Value('bool', not(self == other))
-
-    def __add__(self, other):
-        self._check_type(other)
-        return Value(self.dtype, self.value + other.value)
-
-    def __sub__(self, other):
-        self._check_type(other)
-        if self.dtype != 'int' and self.dtype != 'real':
-            raise TypeError('to subtract, the type of operand must be number')
-        return Value(self.dtype, self.value - other.value)
-
-    def __mul__(self, other):
-        self._check_type(other)
-        if self.dtype != 'int' and self.dtype != 'real':
-            raise TypeError('to multiply, the type of operand must be number')
-        return Value(self.dtype, self.value * other.value)
-
-    def __truediv__(self, other):
-        self._check_type(other)
-        if self.dtype != 'int' and self.dtype != 'real':
-            raise TypeError('to divide, the type of operand must be number')
-        return Value(self.dtype, self.value / other.value)
-
-    def __bool__(self):
-        if self.dtype != 'bool':
-            raise TypeError('you should check bool with a bool value')
-        return self.value
-
-
-symbolTable = {}  # type: {str}
-constTable = []  # type: [Value]
-nameTable = []  # type: [str]
+current_const_list = []  # type:[str]
+current_name_list = []  # type:[str]
+const_list_stack = []  # type:[[str]]
+name_list_stack = []  # type:[[str]]
 
 
 class Counter:
@@ -114,9 +49,6 @@ class StatNode:
         self.type = None  # type: str
         self.children = None
 
-    def perform_operation(self):
-        raise NotImplementedError
-
     def emit_code(self) -> str:
         return NotImplemented
 
@@ -126,11 +58,25 @@ class ExpNode:
         self.type = None  # type: str
         self.children = None  # type: OrderedDict
 
-    def perform_operation(self):
-        return NotImplemented
-
     def emit_code(self) -> str:
         return NotImplemented
+
+
+class ListNode:
+    def __init__(self, init_item=None):
+        self.type = None  # type: str
+        if not init_item:
+            self.children = []
+        else:
+            self.children = [init_item]
+
+    def emit_code(self):
+        code_array = [item.emit_code() for item in self.children]
+        code = '\n'.join(code_array)
+        return code
+
+    def prepend_item(self, item):
+        self.children.insert(0, item)
 
 
 class ConstExpNode(ExpNode):
@@ -138,9 +84,6 @@ class ConstExpNode(ExpNode):
         super().__init__()
         self.type = 'const'
         self.children = {'index': index}
-
-    def perform_operation(self):
-        return constTable[self.children['index']].value
 
     def emit_code(self):
         return 'LOAD_CONST {}'.format(self.children['index'])
@@ -152,9 +95,6 @@ class IDExpNode(ExpNode):
         self.type = 'id'
         self.children = {'index': index}
 
-    def perform_operation(self):
-        return symbolTable[nameTable[self.children['index']]]
-
     def emit_code(self):
         return 'LOAD_NAME {}'.format(self.children['index'])
 
@@ -164,33 +104,6 @@ class BinaryExpNode(ExpNode):
         super().__init__()
         self.type = 'binary'
         self.children = OrderedDict([('operator', operator), ('left', left), ('right', right)])
-
-    def perform_operation(self):
-        [operator, left, right] = self.children.values()
-        if operator == '+':
-            return left.perform_operation() + right.perform_operation()
-        elif operator == '-':
-            return left.perform_operation() - right.perform_operation()
-        elif operator == '*':
-            return left.perform_operation() * right.perform_operation()
-        elif operator == '/':
-            return left.perform_operation() / right.perform_operation()
-        elif operator == 'and':
-            return left.perform_operation() and right.perform_operation()
-        elif operator == 'or':
-            return left.perform_operation() or right.perform_operation()
-        elif operator == '!=':
-            return left.perform_operation() != right.perform_operation()
-        elif operator == '==':
-            return left.perform_operation() == right.perform_operation()
-        elif operator == '>':
-            return left.perform_operation() > right.perform_operation()
-        elif operator == '<':
-            return left.perform_operation() < right.perform_operation()
-        elif operator == '>=':
-            return left.perform_operation() >= right.perform_operation()
-        elif operator == '<=':
-            return left.perform_operation() <= right.perform_operation()
 
     def emit_code(self):
         [operator, left, right] = self.children.values()
@@ -230,21 +143,6 @@ class CompareExpNode(ExpNode):
         self.type = 'compare'
         self.children = OrderedDict([('operator', operator), ('left', left), ('right', right)])
 
-    def perform_operation(self):
-        [operator, left, right] = self.children.values()
-        if operator == '!=':
-            return left.perform_operation() != right.perform_operation()
-        elif operator == '==':
-            return left.perform_operation() == right.perform_operation()
-        elif operator == '>':
-            return left.perform_operation() > right.perform_operation()
-        elif operator == '<':
-            return left.perform_operation() < right.perform_operation()
-        elif operator == '>=':
-            return left.perform_operation() >= right.perform_operation()
-        elif operator == '<=':
-            return left.perform_operation() <= right.perform_operation()
-
     def emit_code(self):
         [operator, left, right] = self.children.values()
         left_code = left.emit_code()
@@ -269,14 +167,7 @@ class UnaryExpNode(ExpNode):
     def __init__(self, exp: ExpNode, operator: str):
         super().__init__()
         self.type = 'unary'
-        self.children = OrderedDict(([('operator', operator), ('exp', exp)]))
-
-    def perform_operation(self):
-        [operator, exp] = self.children.values()
-        if operator == '-':
-            return -exp.perform_operation()
-        elif operator == 'not':
-            return not exp.perform_operation()
+        self.children = OrderedDict([('operator', operator), ('exp', exp)])
 
     def emit_code(self):
         [operator, exp] = self.children.values()
@@ -289,21 +180,34 @@ class UnaryExpNode(ExpNode):
         return exp_code + '\n' + operator_code
 
 
-class StatListNode:
-    def __init__(self, current_stat: StatNode):
-        self.children = [current_stat]
-
-    def prepend_stat(self, stat: StatNode):
-        self.children.insert(0, stat)
-
-    def perform_operation(self):
-        for child in self.children:
-            child.perform_operation()
+class CallExpNode(ExpNode):
+    def __init__(self, function_index: int, expression_list):
+        super().__init__()
+        self.type = 'call'
+        self.children = OrderedDict([('function_index', function_index),
+                                     ('expression_list', expression_list)])
 
     def emit_code(self):
-        list_code_array = [stat.emit_code() for stat in self.children]
-        list_code = '\n'.join(list_code_array)
-        return list_code
+        function_index, expression_list = self.children.values()
+        exp_code = expression_list.emit_code()
+        load_function_code = 'LOAD_NAME {}'.format(function_index)
+        call_function_code = 'CALL_FUNCTION'
+        return exp_code + '\n' + load_function_code + '\n' + call_function_code
+
+
+class ExpListNode(ListNode):
+    def __init__(self, init_item=None):
+        super().__init__(init_item)
+        self.type = 'expression_list'
+
+    def perform_operation(self):
+        raise NotImplementedError
+
+
+class StatListNode(ListNode):
+    def __init__(self):
+        super().__init__()
+        self.type = 'statement-list'
 
 
 class ProgramNode(StatNode):
@@ -312,18 +216,9 @@ class ProgramNode(StatNode):
         self.type = 'program'
         self.children = {'stat_list': stat_list}
 
-    def perform_operation(self):
-        self.children['stat_list'].perform_operation()
-
     def emit_code(self):
-        item = Value('NoneType', None)
-        if item not in constTable:
-            constTable.append(item)
-        index = constTable.index(item)
         stat_code = self.children['stat_list'].emit_code()
-        return_code = """LOAD_CONST {}
-RETURN_VALUE""".format(index)
-        return stat_code + '\n' + return_code
+        return stat_code
 
 
 class CompoundStatNode(StatNode):
@@ -331,9 +226,6 @@ class CompoundStatNode(StatNode):
         super().__init__()
         self.type = 'compound'
         self.children = {'stat_list': stat_list}
-
-    def perform_operation(self):
-        self.children['stat_list'].perform_operation()
 
     def emit_code(self):
         return self.children['stat_list'].emit_code()
@@ -344,10 +236,6 @@ class AssignStatNode(StatNode):
         super().__init__()
         self.type = 'assign'
         self.children = OrderedDict([('id_index', id_index), ('exp', exp)])
-
-    def perform_operation(self):
-        [id_index, exp] = self.children.values()
-        symbolTable[nameTable[id_index]] = exp.perform_operation()
 
     def emit_code(self):
         [id_index, exp] = self.children.values()
@@ -365,19 +253,12 @@ class BreakStatNode(StatNode):
     def emit_code(self):
         return 'BREAK_LOOP'
 
-    def perform_operation(self):
-        raise NotImplementedError
-
 
 class PrintStatNode(StatNode):
     def __init__(self, exp: ExpNode):
         super().__init__()
         self.type = 'print'
         self.children = {'exp': exp}
-
-    def perform_operation(self):
-        exp = self.children['exp']
-        print(exp.perform_operation())
 
     def emit_code(self):
         exp_code = self.children['exp'].emit_code()
@@ -390,11 +271,6 @@ class WhileStatNode(StatNode):
         super().__init__()
         self.type = 'while'
         self.children = OrderedDict([('condition', condition_exp), ('body', body_stat)])
-
-    def perform_operation(self):
-        [condition, body] = self.children.values()
-        while bool(condition.perform_operation()):
-            body.perform_operation()
 
     def emit_code(self):
         [condition, body] = self.children.values()
@@ -419,13 +295,6 @@ class ForStatNode(StatNode):
         self.type = 'for'
         self.children = OrderedDict([('init', init_stat), ('condition', condition_exp),
                                      ('loop', loop_stat), ('body', body_stat)])
-
-    def perform_operation(self):
-        [init, condition, loop, body] = self.children.values()
-        init.perform_operation()
-        while bool(condition.perform_operation()):
-            body.perform_operation()
-            loop.perform_operation()
 
     def emit_code(self):
         [init, condition, loop, body] = self.children.values()
@@ -453,13 +322,6 @@ class BranchStatNode(StatNode):
         self.type = 'branch'
         self.children = OrderedDict([('if_exp', if_exp), ('if_stat', if_stat), ('else_stat', else_stat)])
 
-    def perform_operation(self):
-        [if_exp, if_stat, else_stat] = self.children.values()
-        if bool(if_exp.perform_operation()):
-            if_stat.perform_operation()
-        elif else_stat:
-            else_stat.perform_operation()
-
     def emit_code(self):
         [if_exp, if_stat, else_stat] = self.children.values()
         if_exp_code = if_exp.emit_code()
@@ -480,28 +342,50 @@ L{1}:""".format(if_exp_code, next_label(), if_stat.emit_code())
         return branch_code
 
 
-class Function:
-    def __init__(self, argument, statement):
-        self.argument = argument
-        self.statement = statement
-
-
-class FunctionExpNode(ExpNode):
-    def __init__(self, name, argument_list, stat):
+class ExpStatNode(StatNode):
+    def __init__(self, exp: ExpNode):
         super().__init__()
-        self.type = 'function'
-        self.children = {'name': name, 'argument': argument_list, 'statement': stat}
+        self.type = 'exp_statement'
+        self.children = {'expression': exp}
 
-        def export_to_environment(name, argument, statement):
-            symbolTable[name] = Function(argument, statement)
+    def emit_code(self):
+        expression = self.children['expression']
+        exp_code = expression.emit_code()
+        discard_code = 'POP_TOP'
+        return exp_code + '\n' + discard_code
+
+
+class ReturnStatNode(StatNode):
+    def __init__(self, exp: ExpNode):
+        super().__init__()
+        self.type = 'return'
+        self.children = {'exp': exp}
+
+    def emit_code(self):
+        exp_code = self.children['exp'].emit_code()
+        return_code = 'RETURN_VALUE'
+        return exp_code + '\n' + return_code
+
+
+class ParameterList:
+    def __init__(self, init_item=None):
+        if not init_item:
+            self.parameters = []
+        else:
+            self.parameters = [init_item]
+
+    def prepend_item(self, item):
+        self.parameters.insert(0, item)
+
+    def get_parameters(self):
+        return self.parameters
 
 
 class SyntaxTreeJSONEncoder(json.JSONEncoder):
     def default(self, tree_node: StatNode or ExpNode or StatListNode):
-        if isinstance(tree_node, StatNode) or isinstance(tree_node, ExpNode):
+        if isinstance(tree_node, StatNode) or isinstance(tree_node, ExpNode)\
+                or isinstance(tree_node, ListNode):
             return OrderedDict([('type', tree_node.type), ('children', tree_node.children)])
-        if isinstance(tree_node, StatListNode):
-            return OrderedDict([('children', tree_node.children)])
         return json.JSONEncoder.default(self, tree_node)
 
 
@@ -514,14 +398,14 @@ def p_program(p):
 
 def p_statement_list(p):
     """
-    statement_list : statement 
-                  | statement statement_list
+    statement_list : statement statement_list
+                  | 
     """
-    if len(p) == 2:
-        p[0] = StatListNode(p[1])
+    if len(p) == 1:
+        p[0] = StatListNode()
     else:
         p[0] = p[2]
-        p[0].prepend_stat(p[1])
+        p[0].prepend_item(p[1])
 
 
 def p_statement(p):
@@ -532,7 +416,9 @@ def p_statement(p):
             |  for_statement
             |  assign_statement
             |  print_statement
+            |  expression_statement
             |  break_statement
+            |  return_statement
     """
     p[0] = p[1]
 
@@ -573,9 +459,9 @@ def p_assign_statement(p):
     """
     assign_statement : ID ASSIGN expression
     """
-    if p[1] not in nameTable:
-        nameTable.append(p[1])
-    p[0] = AssignStatNode(nameTable.index(p[1]), p[3])
+    if p[1] not in current_name_list:
+        current_name_list.append(p[1])
+    p[0] = AssignStatNode(current_name_list.index(p[1]), p[3])
 
 
 def p_break_statement(p):
@@ -587,9 +473,23 @@ def p_break_statement(p):
 
 def p_print_statement(p):
     """
-    print_statement : PRINT expression
+    print_statement : PRINT expression 
     """
     p[0] = PrintStatNode(p[2])
+
+
+def p_expression_statement(p):
+    """
+    expression_statement : expression 
+    """
+    p[0] = ExpStatNode(p[1])
+
+
+def p_return_statement(p):
+    """
+    return_statement : RETURN expression
+    """
+    p[0] = ReturnStatNode(p[2])
 
 
 def p_binary_expression(p):
@@ -636,9 +536,9 @@ def p_expression_int(p):
     expression : INT
     """
     exp_item = Value('int', p[1])
-    if exp_item not in constTable:
-        constTable.append(exp_item)
-    p[0] = ConstExpNode(constTable.index(exp_item))
+    if exp_item not in current_const_list:
+        current_const_list.append(exp_item)
+    p[0] = ConstExpNode(current_const_list.index(exp_item))
 
 
 def p_expression_real(p):
@@ -646,9 +546,9 @@ def p_expression_real(p):
     expression : REAL
     """
     exp_item = Value('real', p[1])
-    if exp_item not in constTable:
-        constTable.append(exp_item)
-    p[0] = ConstExpNode(constTable.index(exp_item))
+    if exp_item not in current_const_list:
+        current_const_list.append(exp_item)
+    p[0] = ConstExpNode(current_const_list.index(exp_item))
 
 
 def p_expression_string(p):
@@ -656,17 +556,94 @@ def p_expression_string(p):
     expression : STRING
     """
     exp_item = Value('str', p[1])
-    if exp_item not in constTable:
-        constTable.append(exp_item)
-    p[0] = ConstExpNode(constTable.index(exp_item))
+    if exp_item not in current_const_list:
+        current_const_list.append(exp_item)
+    p[0] = ConstExpNode(current_const_list.index(exp_item))
+
+current_parameter_list = ParameterList()
+
+
+def p_expression_function(p):
+    """
+    expression : FUNCTION LEFT_PAREN parameter_list RIGHT_PAREN seen_FUNCTION LEFT_BRACE statement_list RIGHT_BRACE
+    """
+    global current_const_list
+    global current_name_list
+    parameter_list = p[3].get_parameters()
+    statement_list = p[7]
+    code = statement_list.emit_code()
+    function_obj = CodeObj(code, current_const_list, current_name_list)
+    exp_item = Value('function', Function(parameter_list, function_obj))
+    current_const_list = const_list_stack.pop()
+    current_name_list = name_list_stack.pop()
+    if exp_item not in current_const_list:
+        current_const_list.append(exp_item)
+    index = current_const_list.index(exp_item)
+    p[0] = ConstExpNode(index)
+
+
+def p_seen_function(p):
+    """
+    seen_FUNCTION :
+    """
+    global current_name_list
+    global current_const_list
+    global current_parameter_list
+    name_list_stack.append(current_name_list)
+    const_list_stack.append(current_const_list)
+    current_name_list = current_parameter_list.get_parameters()
+    current_const_list = []
+    current_parameter_list = ParameterList()
 
 
 def p_expression_id(p):
     """
-    expression : ID
+    expression : ID %prec WITHOUT_LEFT_PAREN
     """
-    index = nameTable.index(p[1])
+    index = current_name_list.index(p[1])
     p[0] = IDExpNode(index)
+
+
+def p_call_expression(p):
+    """
+    expression : ID LEFT_PAREN expression_list RIGHT_PAREN
+    """
+    function_index = current_name_list.index(p[1])
+    p[0] = CallExpNode(function_index, p[3])
+
+
+def p_expression_list(p):
+    """
+    expression_list :  expression COMMA expression_list
+                    |  expression
+                    |
+    """
+    if len(p) == 1:
+        p[0] = ExpListNode()
+    elif len(p) == 2:
+        p[0] = ExpListNode(p[1])
+    else:
+        p[0] = p[3]
+        p[0].prepend_item(p[1])
+
+
+def p_parameter_list(p):
+    """
+    parameter_list :  ID COMMA parameter_list
+                   | ID
+                   |
+    """
+    global current_parameter_list
+    if len(p) == 1:
+        p[0] = ParameterList()
+        current_parameter_list = p[0]
+    elif len(p) == 2:
+        p[0] = ParameterList(p[1])
+        current_parameter_list = p[0]
+    else:
+        p[0] = p[3]
+        p[0].prepend_item(p[1])
+        current_parameter_list = p[0]
 
 
 def p_error(p):
@@ -680,7 +657,10 @@ def generate_code(program: str):
     print("the JSON format is:")
     print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
     code = result.emit_code()
-    print("the code is")
-    print(code)
-    return{'co_code': code, 'co_consts': constTable, 'co_names': nameTable}
+    return CodeObj(code, current_const_list, current_name_list)
 
+if __name__ == '__main__':
+    program_filename = 'test.cs'
+    with open(program_filename, 'r') as program_file:
+        program = program_file.read()
+        print(generate_code(program))

@@ -2,18 +2,26 @@ import sys
 
 import csparser
 import vm
-import assembler
+import labelconverter
 import pickle
+from value import CodeObj
+
+
+def convert_label_recursive(code_obj: CodeObj):
+    code_obj.code = labelconverter.convert(code_obj.code)
+    for const_item in code_obj.const_list:
+        if const_item.dtype == 'function':
+            convert_label_recursive(const_item.value.code_obj)
 
 
 def compile(file_name: str, output_name: str):
     with open(file_name, 'r') as program_file:
         program = program_file.read()
-        code = csparser.generate_code(program)
-        code['co_code'] = assembler.assemble(code['co_code'])
-        print('the generated code is {}'.format(code))
+        code_obj = csparser.generate_code(program)
+        convert_label_recursive(code_obj)
+        print('the generated code is:\n{}'.format(code_obj))
         output = open(output_name, 'wb')
-        pickle.dump(code, output)
+        pickle.dump(code_obj, output)
 
 
 def run(file_name: str):
