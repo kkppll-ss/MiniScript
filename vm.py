@@ -7,6 +7,7 @@ import collections
 import operator
 
 import bytecode
+from bytecode import index2tuple
 from value import *
 
 
@@ -66,6 +67,10 @@ class VirtualMachine(object):
         self.frames = []  # The call stack of frames.
         self.current_frame = None  # The current frame.
         self.return_value = None
+        self.display_stack = {}  # type: {[int: Frame]}
+        self.current_lexical_depth = None
+        self.lexical_depth_stack = []
+        self.display = {}
 
     # Frame manipulation
     def make_frame(self, code, call_args=None, local_names=None):
@@ -88,6 +93,28 @@ class VirtualMachine(object):
         else:
             self.current_frame = None
 
+    def push_display(self, lexical_depth, frame):
+        if lexical_depth in self.display_stack:
+            self.display_stack[lexical_depth].append(frame)
+        else:
+            self.display_stack[lexical_depth] = [frame]
+        self.display[lexical_depth] = frame
+        self.lexical_depth_stack.append(lexical_depth)
+        self.current_lexical_depth = lexical_depth
+
+    def pop_display(self):
+        lexical_depth = self.current_lexical_depth
+        self.display_stack[lexical_depth].pop()
+        if self.display_stack[lexical_depth]:
+            self.display[lexical_depth] = self.display_stack[lexical_depth][-1]
+        else:
+            self.display[lexical_depth] = None
+        self.lexical_depth_stack.pop()
+        if self.lexical_depth_stack:
+            self.current_lexical_depth = self.lexical_depth_stack[-1]
+        else:
+            self.current_lexical_depth = None
+
     # Jumping through bytecode
     def jump(self, jump):
         """Move the bytecode pointer to `jump`, so it will execute next."""
@@ -96,8 +123,9 @@ class VirtualMachine(object):
     def run_code(self, code, local_names=None):
         """ An entry point to execute code using the virtual machine."""
         frame = self.make_frame(code, local_names=local_names)
-
+        self.push_display(0, frame)
         self.run_frame(frame)
+        self.pop_display()
         # Check some invariants
         # if self.frames:
         #     raise VirtualMachineError("Frames left over!")
@@ -116,13 +144,13 @@ class VirtualMachine(object):
             if byte_name in bytecode.HAVE_CONST:  # Look up a constant
                 arg = f.code_obj.const_list[arg_val]
             elif byte_name in bytecode.HAVE_NAME:  # Look up a name
-                arg = f.code_obj.name_list[arg_val]
+                arg = index2tuple(arg_val)
             else:
                 arg = arg_val
             argument = [arg]
         else:
             argument = []
-
+        # print("the instruction: {} {}".format(byte_name, argument))
         return byte_name, argument
 
     def dispatch(self, byte_name, argument):
@@ -179,8 +207,12 @@ class VirtualMachine(object):
 
     def call_function(self, func: Function, arguments: []):
         call_args = dict(zip(func.parameter_list, arguments))
+        lexical_depth = func.lexical_depth
         frame = self.make_frame(func.code_obj, call_args)
-        return self.run_frame(frame)
+        self.push_display(lexical_depth, frame)
+        ret_value = self.run_frame(frame)
+        self.pop_display()
+        return ret_value
 
     def byte_LOAD_CONST(self, const):
         self.current_frame.push(const)
@@ -192,16 +224,18 @@ class VirtualMachine(object):
         self.current_frame.push(self.current_frame.top())
 
     # Names
-    def byte_LOAD_NAME(self, name):
-        frame = self.current_frame
-        if name in frame.local_names:
-            val = frame.local_names[name]
-        else:
-            raise NameError("name '%s' is not defined" % name)
+    def byte_LOAD_NAME(self, tuple_index):
+        lexical_depth, index = tuple_index
+        frame = self.display[lexical_depth]
+        name = frame.code_obj.name_list[index]
+        val = frame.local_names[name]
         self.current_frame.push(val)
 
-    def byte_STORE_NAME(self, name):
-        self.current_frame.local_names[name] = self.current_frame.pop()
+    def byte_STORE_NAME(self, tuple_index):
+        lexical_depth, index = tuple_index
+        frame = self.display[lexical_depth]
+        name = frame.code_obj.name_list[index]
+        frame.local_names[name] = self.current_frame.pop()
 
     def byte_DELETE_NAME(self, name):
         del self.current_frame.local_names[name]

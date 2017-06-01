@@ -3,9 +3,13 @@ from collections import OrderedDict
 from typing import Optional
 import ply.yacc as yacc
 import sys
+
+from copy import deepcopy
+from manager import ScopeManager
+from bytecode import *
 from cslexer import tokens
 from value import Value, Function, CodeObj
-
+import labelconverter
 precedence = (
     ('nonassoc', 'INCOMPLETE_IF'),
     ('nonassoc', 'ELSE'),
@@ -19,10 +23,22 @@ precedence = (
     ('right', 'NOT', 'UNARY_MINUS')
 )
 
-current_const_list = []  # type:[str]
-current_name_list = []  # type:[str]
-const_list_stack = []  # type:[[str]]
-name_list_stack = []  # type:[[str]]
+
+class ParameterList:
+    def __init__(self, init_item=None):
+        if not init_item:
+            self.parameters = []
+        else:
+            self.parameters = [init_item]
+
+    def prepend_item(self, item):
+        self.parameters.insert(0, item)
+
+    def get_parameters(self):
+        return self.parameters
+
+current_parameter_list = ParameterList()
+scope_manager = ScopeManager()
 
 
 class Counter:
@@ -192,7 +208,11 @@ class CallExpNode(ExpNode):
         exp_code = expression_list.emit_code()
         load_function_code = 'LOAD_NAME {}'.format(function_index)
         call_function_code = 'CALL_FUNCTION'
-        return exp_code + '\n' + load_function_code + '\n' + call_function_code
+        if exp_code:
+            ret_code = exp_code + '\n' + load_function_code + '\n' + call_function_code
+        else:
+            ret_code = load_function_code + '\n' + call_function_code
+        return ret_code
 
 
 class ExpListNode(ListNode):
@@ -367,20 +387,6 @@ class ReturnStatNode(StatNode):
         return exp_code + '\n' + return_code
 
 
-class ParameterList:
-    def __init__(self, init_item=None):
-        if not init_item:
-            self.parameters = []
-        else:
-            self.parameters = [init_item]
-
-    def prepend_item(self, item):
-        self.parameters.insert(0, item)
-
-    def get_parameters(self):
-        return self.parameters
-
-
 class SyntaxTreeJSONEncoder(json.JSONEncoder):
     def default(self, tree_node: StatNode or ExpNode or StatListNode):
         if isinstance(tree_node, StatNode) or isinstance(tree_node, ExpNode)\
@@ -457,11 +463,18 @@ def p_for_statement(p):
 
 def p_assign_statement(p):
     """
-    assign_statement : ID ASSIGN expression
+    assign_statement : ID ASSIGN seen_ASSIGN expression
     """
-    if p[1] not in current_name_list:
-        current_name_list.append(p[1])
-    p[0] = AssignStatNode(current_name_list.index(p[1]), p[3])
+    t = scope_manager.find_name(p[1])
+    p[0] = AssignStatNode(tuple2index(t), p[4])
+
+
+def p_seen_ASSIGN(p):
+    """
+    seen_ASSIGN :
+    """
+    if not scope_manager.contains_name(p[-2]):
+        scope_manager.append_name(p[-2])
 
 
 def p_break_statement(p):
@@ -536,9 +549,9 @@ def p_expression_int(p):
     expression : INT
     """
     exp_item = Value('int', p[1])
-    if exp_item not in current_const_list:
-        current_const_list.append(exp_item)
-    p[0] = ConstExpNode(current_const_list.index(exp_item))
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    p[0] = ConstExpNode(scope_manager.find_const(exp_item))
 
 
 def p_expression_real(p):
@@ -546,9 +559,9 @@ def p_expression_real(p):
     expression : REAL
     """
     exp_item = Value('real', p[1])
-    if exp_item not in current_const_list:
-        current_const_list.append(exp_item)
-    p[0] = ConstExpNode(current_const_list.index(exp_item))
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    p[0] = ConstExpNode(scope_manager.find_const(exp_item))
 
 
 def p_expression_string(p):
@@ -556,29 +569,24 @@ def p_expression_string(p):
     expression : STRING
     """
     exp_item = Value('str', p[1])
-    if exp_item not in current_const_list:
-        current_const_list.append(exp_item)
-    p[0] = ConstExpNode(current_const_list.index(exp_item))
-
-current_parameter_list = ParameterList()
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    p[0] = ConstExpNode(scope_manager.find_const(exp_item))
 
 
 def p_expression_function(p):
     """
     expression : FUNCTION LEFT_PAREN parameter_list RIGHT_PAREN seen_FUNCTION LEFT_BRACE statement_list RIGHT_BRACE
     """
-    global current_const_list
-    global current_name_list
     parameter_list = p[3].get_parameters()
     statement_list = p[7]
     code = statement_list.emit_code()
-    function_obj = CodeObj(code, current_const_list, current_name_list)
-    exp_item = Value('function', Function(parameter_list, function_obj))
-    current_const_list = const_list_stack.pop()
-    current_name_list = name_list_stack.pop()
-    if exp_item not in current_const_list:
-        current_const_list.append(exp_item)
-    index = current_const_list.index(exp_item)
+    function_obj = CodeObj(code, scope_manager.current_const_list, scope_manager.current_name_list)
+    exp_item = Value('function', Function(parameter_list, function_obj, scope_manager.current_lexical_depth))
+    scope_manager.exit_scope()
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    index = scope_manager.find_const(exp_item)
     p[0] = ConstExpNode(index)
 
 
@@ -586,13 +594,8 @@ def p_seen_function(p):
     """
     seen_FUNCTION :
     """
-    global current_name_list
-    global current_const_list
     global current_parameter_list
-    name_list_stack.append(current_name_list)
-    const_list_stack.append(current_const_list)
-    current_name_list = current_parameter_list.get_parameters()
-    current_const_list = []
+    scope_manager.new_scope(current_parameter_list.get_parameters())
     current_parameter_list = ParameterList()
 
 
@@ -600,16 +603,16 @@ def p_expression_id(p):
     """
     expression : ID %prec WITHOUT_LEFT_PAREN
     """
-    index = current_name_list.index(p[1])
-    p[0] = IDExpNode(index)
+    t = scope_manager.find_name(p[1])
+    p[0] = IDExpNode(tuple2index(t))
 
 
 def p_call_expression(p):
     """
     expression : ID LEFT_PAREN expression_list RIGHT_PAREN
     """
-    function_index = current_name_list.index(p[1])
-    p[0] = CallExpNode(function_index, p[3])
+    function_tuple = scope_manager.find_name(p[1])
+    p[0] = CallExpNode(tuple2index(function_tuple), p[3])
 
 
 def p_expression_list(p):
@@ -636,14 +639,14 @@ def p_parameter_list(p):
     global current_parameter_list
     if len(p) == 1:
         p[0] = ParameterList()
-        current_parameter_list = p[0]
+        current_parameter_list = deepcopy(p[0])
     elif len(p) == 2:
         p[0] = ParameterList(p[1])
-        current_parameter_list = p[0]
+        current_parameter_list = deepcopy(p[0])
     else:
         p[0] = p[3]
         p[0].prepend_item(p[1])
-        current_parameter_list = p[0]
+        current_parameter_list = deepcopy(p[0])
 
 
 def p_error(p):
@@ -657,10 +660,15 @@ def generate_code(program: str):
     print("the JSON format is:")
     print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
     code = result.emit_code()
-    return CodeObj(code, current_const_list, current_name_list)
+    return CodeObj(code, scope_manager.current_const_list, scope_manager.current_name_list)
 
-if __name__ == '__main__':
-    program_filename = 'test.cs'
+
+def main():
+    program_filename = 'test.js'
     with open(program_filename, 'r') as program_file:
         program = program_file.read()
-        print(generate_code(program))
+        code = generate_code(program)
+        print(code)
+
+if __name__ == '__main__':
+    main()

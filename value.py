@@ -58,6 +58,11 @@ class Value:
             raise TypeError('to divide, the type of operand must be number')
         return Value(self.dtype, self.value / other.value)
 
+    def __neg__(self):
+        if self.dtype != 'int' and self.dtype != 'real':
+            raise TypeError('to negative, the type of operand must be number')
+        return Value(self.dtype, -self.value)
+
     def __bool__(self):
         if self.dtype != 'bool':
             raise TypeError('you should check bool with a bool value')
@@ -85,12 +90,13 @@ end""".format(self.const_list, self.name_list, self.code)
 
 
 class Function:
-    def __init__(self, parameter_list: [str], code_obj: CodeObj):
-        self.code_obj = code_obj
+    def __init__(self, parameter_list: [str], code_obj: CodeObj, lexical_depth: int):
         self.parameter_list = parameter_list
+        self.code_obj = code_obj
+        self.lexical_depth = lexical_depth
 
     def __str__(self):
-        return str((self.parameter_list, self.code_obj))
+        return str((self.lexical_depth, self.parameter_list, self.code_obj))
 
     def __repr__(self):
         return str(self)
