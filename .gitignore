@@ -52,3 +52,5 @@ __pycache__/
 parser.out
 parsetab.py
 /test.o
+temp.txt
+parselog.txt

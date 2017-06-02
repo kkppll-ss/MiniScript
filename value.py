@@ -58,6 +58,31 @@ class Value:
             raise TypeError('to divide, the type of operand must be number')
         return Value(self.dtype, self.value / other.value)
 
+    def __getitem__(self, item):
+        obj = self
+        while obj.dtype == 'table':
+            if item in obj.value:
+                return obj.value[item]
+            elif Value('str', 'prototype') in obj.value:
+                obj = obj.value[Value('str', 'prototype')]
+            else:
+                raise ('item {} not exists!'.format(item))
+
+    def __setitem__(self, key, value):
+        obj = self
+        succeed = False
+        while obj.dtype == 'table':
+            if key in obj.value:
+                obj.value[key] = value
+                succeed = True
+                break
+            elif Value('str', 'prototype') in obj.value:
+                obj = obj.value[Value('str', 'prototype')]
+            else:
+                break
+        if not succeed:
+            self.value[key] = value
+
     def __neg__(self):
         if self.dtype != 'int' and self.dtype != 'real':
             raise TypeError('to negative, the type of operand must be number')
@@ -67,6 +92,11 @@ class Value:
         if self.dtype != 'bool':
             raise TypeError('you should check bool with a bool value')
         return self.value
+
+    def __hash__(self):
+        if self.dtype == 'table':
+            raise TypeError('the type table is not hashable')
+        return hash(self.value)
 
 
 class CodeObj:

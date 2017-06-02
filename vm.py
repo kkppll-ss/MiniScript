@@ -220,9 +220,6 @@ class VirtualMachine(object):
     def byte_POP_TOP(self):
         self.current_frame.pop()
 
-    def byte_DUP_TOP(self):
-        self.current_frame.push(self.current_frame.top())
-
     # Names
     def byte_LOAD_NAME(self, tuple_index):
         lexical_depth, index = tuple_index
@@ -237,30 +234,9 @@ class VirtualMachine(object):
         name = frame.code_obj.name_list[index]
         frame.local_names[name] = self.current_frame.pop()
 
-    def byte_DELETE_NAME(self, name):
-        del self.current_frame.local_names[name]
-
-    def byte_LOAD_FAST(self, name):
-        if name in self.current_frame.local_names:
-            val = self.current_frame.local_names[name]
-        else:
-            raise UnboundLocalError(
-                "local variable '%s' referenced before assignment" % name
-            )
-        self.current_frame.push(val)
-
-    def byte_STORE_FAST(self, name):
-        self.current_frame.local_names[name] = self.current_frame.pop()
-
-    def byte_LOAD_GLOBAL(self, name):
-        f = self.current_frame
-        if name in f.global_names:
-            val = f.global_names[name]
-        elif name in f.builtin_names:
-            val = f.builtin_names[name]
-        else:
-            raise NameError("global name '%s' is not defined" % name)
-        f.push(val)
+    def byte_STORE_SUBSCR(self):
+        val, obj, subscr = self.current_frame.popn(3)
+        obj[subscr] = val
 
     # Operators
 
@@ -321,30 +297,13 @@ class VirtualMachine(object):
 
     def byte_BUILD_LIST(self, count):
         elements = self.current_frame.popn(count)
-        self.current_frame.push(elements)
+        table = dict(enumerate(elements))
+        self.current_frame.push(Value('table', table))
 
-    def byte_BUILD_MAP(self, size):
-        self.current_frame.push({})
-
-    def byte_STORE_MAP(self):
-        the_map, val, key = self.current_frame.popn(3)
-        the_map[key] = val
-        self.current_frame.push(the_map)
-
-    def byte_UNPACK_SEQUENCE(self, count):
-        seq = self.current_frame.pop()
-        for x in reversed(seq):
-            self.current_frame.push(x)
-
-    def byte_BUILD_SLICE(self, count):
-        if count == 2:
-            x, y = self.current_frame.popn(2)
-            self.current_frame.push(slice(x, y))
-        elif count == 3:
-            x, y, z = self.current_frame.popn(3)
-            self.current_frame.push(slice(x, y, z))
-        else:  # pragma: no cover
-            raise VirtualMachineError("Strange BUILD_SLICE count: %r" % count)
+    def byte_BUILD_MAP(self, count):
+        elements = self.current_frame.popn(2 * count)
+        table = {elements[i]: elements[i+1] for i in range(0, len(elements), 2)}
+        self.current_frame.push(Value('table', table))
 
     def byte_LIST_APPEND(self, count):
         val = self.current_frame.pop()
@@ -352,9 +311,6 @@ class VirtualMachine(object):
         the_list.append(val)
 
     # Jumps
-
-    def byte_JUMP_FORWARD(self, jump):
-        self.jump(jump)
 
     def byte_JUMP_ABSOLUTE(self, jump):
         self.jump(jump)
@@ -369,20 +325,6 @@ class VirtualMachine(object):
         if not val:
             self.jump(jump)
 
-    def byte_JUMP_IF_TRUE_OR_POP(self, jump):
-        val = self.current_frame.top()
-        if val:
-            self.jump(jump)
-        else:
-            self.current_frame.pop()
-
-    def byte_JUMP_IF_FALSE_OR_POP(self, jump):
-        val = self.current_frame.top()
-        if not val:
-            self.jump(jump)
-        else:
-            self.current_frame.pop()
-
     # Blocks
 
     def byte_SETUP_LOOP(self, destination):
@@ -390,16 +332,6 @@ class VirtualMachine(object):
 
     def byte_BREAK_LOOP(self):
         return 'break'
-
-    def byte_CONTINUE_LOOP(self, destination):
-        # This is a trick with the return value.
-        # While unrolling blocks, continue and return both have to preserve
-        # state as the finally blocks are executed.  For continue, it's
-        # where to jump to, for return, it's the value to return.  It gets
-        # pushed on the stack for both, so continue puts the jump destination
-        # into return_value.
-        self.return_value = destination
-        return 'continue'
 
     def byte_POP_BLOCK(self):
         self.current_frame.pop_block()

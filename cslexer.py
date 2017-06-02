@@ -25,7 +25,6 @@ tokens = [
              'DIVIDE',
              'UNARY_MINUS',
              'INCOMPLETE_IF',
-             'WITHOUT_LEFT_PAREN',
              'ASSIGN',
              'EQUAL',
              'NOT_EQUAL',
@@ -35,10 +34,14 @@ tokens = [
              'LESS_EQUAL',
              'LEFT_BRACE',
              'RIGHT_BRACE',
+             'LEFT_BRACKET',
+             'RIGHT_BRACKET',
              'LEFT_PAREN',
              'RIGHT_PAREN',
              'SEMICOLON',
-             'COMMA'
+             'COMMA',
+             'COLON',
+             'DOT'
          ] + list(reserved_word.values())
 
 
@@ -56,7 +59,7 @@ def t_REAL(t):
 
 def t_STRING(t):
     r'"[^"]*"'
-    t.value = t.value[1:len(t.value)-1]
+    t.value = t.value[1:len(t.value) - 1]
     return t
 
 
@@ -72,6 +75,8 @@ t_TIMES = r'\*'
 t_DIVIDE = r'/'
 t_LEFT_BRACE = r'\{'
 t_RIGHT_BRACE = r'\}'
+t_LEFT_BRACKET = r'\['
+t_RIGHT_BRACKET = r'\]'
 t_LEFT_PAREN = r'\('
 t_RIGHT_PAREN = r'\)'
 t_ASSIGN = r'='
@@ -84,6 +89,8 @@ t_GREATER_EQUAL = r'>='
 t_LESS_EQUAL = r'<='
 t_ignore = ' \t'
 t_COMMA = r','
+t_COLON = r'\:'
+t_DOT = r'\.'
 
 
 def t_NEWLINE(t):

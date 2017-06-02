@@ -1,11 +1,11 @@
-doFibonacci = function (base, n) {
+
+print (function (base, n) {
     addFactory = function () {
         add = function (a, b) {
             return a + b
         }
         return add
     }
-    addition = addFactory()
     fibonacci = function (n, method) {
         if (n > base)
         {
@@ -17,8 +17,6 @@ doFibonacci = function (base, n) {
         }
         return result
     }
-    return fibonacci(n, addition)
-}
-for (i = 5; i < 15; i = i + 1)
-    print doFibonacci(3, i)
+    return fibonacci(n, addFactory())
+})(3, 10)
 return 0

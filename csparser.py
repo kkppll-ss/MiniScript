@@ -3,7 +3,7 @@ from collections import OrderedDict
 from typing import Optional
 import ply.yacc as yacc
 import sys
-
+import logging
 from copy import deepcopy
 from manager import ScopeManager
 from bytecode import *
@@ -13,15 +13,26 @@ import labelconverter
 precedence = (
     ('nonassoc', 'INCOMPLETE_IF'),
     ('nonassoc', 'ELSE'),
-    ('nonassoc', 'WITHOUT_LEFT_PAREN'),
-    ('nonassoc', 'LEFT_PAREN'),
+    ('nonassoc', 'RETURN'),
+    ('nonassoc', 'PRINT'),
+    ('nonassoc', 'ASSIGN'),
     ('left', 'AND', 'OR'),
     ('left', 'EQUAL', 'NOT_EQUAL'),
     ('left', 'GREATER', 'LESS', 'GREATER_EQUAL', 'LESS_EQUAL'),
     ('left', 'PLUS', 'MINUS'),
     ('left', 'TIMES', 'DIVIDE'),
-    ('right', 'NOT', 'UNARY_MINUS')
+    ('right', 'NOT', 'UNARY_MINUS'),
+    ('left', 'LEFT_PAREN', 'LEFT_BRACKET', 'DOT'),
 )
+
+
+logging.basicConfig(
+    level = logging.DEBUG,
+    filename = "parselog.txt",
+    filemode = "w",
+    format = "%(filename)10s:%(lineno)4d:%(message)s"
+)
+log = logging.getLogger()
 
 
 class ParameterList:
@@ -125,7 +136,6 @@ class BinaryExpNode(ExpNode):
         [operator, left, right] = self.children.values()
         left_code = left.emit_code()
         right_code = right.emit_code()
-        operator_code = 'UNKNOWN_BINARY_OPERATOR'
         if operator == '+':
             operator_code = 'BINARY_ADD'
         elif operator == '-':
@@ -150,6 +160,10 @@ class BinaryExpNode(ExpNode):
             operator_code = 'BINARY_GRATER_EQUAL'
         elif operator == '<=':
             operator_code = 'BINARY_LESS_EQUAL'
+        elif operator == '[]':
+            operator_code = 'BINARY_SUBSCR'
+        else:
+            raise ValueError('unrecognized binary operator {}'.format(operator))
         return left_code + '\n' + right_code + '\n' + operator_code
 
 
@@ -196,17 +210,42 @@ class UnaryExpNode(ExpNode):
         return exp_code + '\n' + operator_code
 
 
+class ExpListNode(ListNode):
+    def __init__(self, init_item=None):
+        super().__init__(init_item)
+        self.type = 'expression_list'
+
+
+class MapElementExpNode(ExpNode):
+    def __init__(self, key_expression: ExpNode, value_expression: ExpNode):
+        super().__init__()
+        self.type = 'map_element_expression'
+        self.children = OrderedDict([('key_expression', key_expression), ('value_expression', value_expression)])
+
+    def emit_code(self):
+        key_expression, value_expression = self.children.values()
+        key_exp_code = key_expression.emit_code()
+        value_exp_code = value_expression.emit_code()
+        return key_exp_code + '\n' + value_exp_code
+
+
+class MapElementListNode(ListNode):
+    def __init__(self, init_item=None):
+        super().__init__(init_item)
+        self.type = 'map_element_list'
+
+
 class CallExpNode(ExpNode):
-    def __init__(self, function_index: int, expression_list):
+    def __init__(self, func_expression: ExpNode, expression_list: ExpListNode):
         super().__init__()
         self.type = 'call'
-        self.children = OrderedDict([('function_index', function_index),
+        self.children = OrderedDict([('func_expression', func_expression),
                                      ('expression_list', expression_list)])
 
     def emit_code(self):
-        function_index, expression_list = self.children.values()
+        func_expression, expression_list = self.children.values()
         exp_code = expression_list.emit_code()
-        load_function_code = 'LOAD_NAME {}'.format(function_index)
+        load_function_code = func_expression.emit_code()
         call_function_code = 'CALL_FUNCTION'
         if exp_code:
             ret_code = exp_code + '\n' + load_function_code + '\n' + call_function_code
@@ -215,18 +254,43 @@ class CallExpNode(ExpNode):
         return ret_code
 
 
-class ExpListNode(ListNode):
-    def __init__(self, init_item=None):
-        super().__init__(init_item)
-        self.type = 'expression_list'
+class ArrayExpNode(ExpNode):
+    def __init__(self, expression_list: ExpListNode):
+        super().__init__()
+        self.type = 'array'
+        self.children = {'expression_list': expression_list}
 
-    def perform_operation(self):
-        raise NotImplementedError
+    def emit_code(self):
+        expression_list = self.children['expression_list']
+        exp_code = expression_list.emit_code()
+        build_array_code = 'BUILD_LIST {}'.format(len(expression_list.children))
+        if exp_code:
+            ret_code = exp_code + '\n' + build_array_code
+        else:
+            ret_code = build_array_code
+        return ret_code
+
+
+class MapExpNode(ExpNode):
+    def __init__(self, map_element_list: MapElementListNode):
+        super().__init__()
+        self.type = 'map'
+        self.children = {'map_element_list': map_element_list}
+
+    def emit_code(self):
+        map_element_list = self.children['map_element_list']
+        exp_code = map_element_list.emit_code()
+        build_array_code = 'BUILD_MAP {}'.format(len(map_element_list.children))
+        if exp_code:
+            ret_code = exp_code + '\n' + build_array_code
+        else:
+            ret_code = build_array_code
+        return ret_code
 
 
 class StatListNode(ListNode):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, init_item=None):
+        super().__init__(init_item)
         self.type = 'statement-list'
 
 
@@ -262,6 +326,23 @@ class AssignStatNode(StatNode):
         exp_code = exp.emit_code()
         assign_code = 'STORE_NAME {}'.format(id_index)
         return exp_code + '\n' + assign_code
+
+
+class AssignSubscrStatNode(StatNode):
+    def __init__(self, array_expression: ExpNode, subscr_expression: ExpNode, value_expression: ExpNode):
+        super().__init__()
+        self.type = 'assign_subscr_statement'
+        self.children = OrderedDict([('array_expression', array_expression),
+                                     ('subscr_expression', subscr_expression),
+                                     ('value_expression', value_expression)])
+
+    def emit_code(self):
+        array_expression, subscr_expression, value_expression = self.children.values()
+        array_exp_code = array_expression.emit_code()
+        subscr_exp_code = subscr_expression.emit_code()
+        value_exp_code = value_expression.emit_code()
+        store_code = 'STORE_SUBSCR'
+        return value_exp_code + '\n' + array_exp_code + '\n' + subscr_exp_code + '\n' + store_code
 
 
 class BreakStatNode(StatNode):
@@ -405,7 +486,7 @@ def p_program(p):
 def p_statement_list(p):
     """
     statement_list : statement statement_list
-                  | 
+                    |
     """
     if len(p) == 1:
         p[0] = StatListNode()
@@ -421,6 +502,7 @@ def p_statement(p):
             |  while_statement
             |  for_statement
             |  assign_statement
+            |  assign_subscr_statement
             |  print_statement
             |  expression_statement
             |  break_statement
@@ -477,6 +559,24 @@ def p_seen_ASSIGN(p):
         scope_manager.append_name(p[-2])
 
 
+def p_assign_subscr_statement(p):
+    """
+    assign_subscr_statement : expression LEFT_BRACKET expression RIGHT_BRACKET ASSIGN expression
+    """
+    p[0] = AssignSubscrStatNode(p[1], p[3], p[6])
+
+
+def p_assign_dot_statement(p):
+    """
+    assign_subscr_statement : expression DOT ID ASSIGN expression
+    """
+    exp_item = Value('str', p[3])
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    subscr_node = ConstExpNode(scope_manager.find_const(exp_item))
+    p[0] = AssignSubscrStatNode(p[1], subscr_node, p[5])
+
+
 def p_break_statement(p):
     """
     break_statement : BREAK
@@ -515,6 +615,24 @@ def p_binary_expression(p):
               | expression OR expression
     """
     p[0] = BinaryExpNode(p[1], p[3], p[2])
+
+
+def p_binary_subscr_expression(p):
+    """
+    expression : expression LEFT_BRACKET expression RIGHT_BRACKET
+    """
+    p[0] = BinaryExpNode(p[1], p[3], '[]')
+
+
+def p_binary_dot_expression(p):
+    """
+    expression : expression DOT ID
+    """
+    exp_item = Value('str', p[3])
+    if not scope_manager.contains_const(exp_item):
+        scope_manager.append_const(exp_item)
+    subscr_node = ConstExpNode(scope_manager.find_const(exp_item))
+    p[0] = BinaryExpNode(p[1], subscr_node, '[]')
 
 
 def p_compare_expression(p):
@@ -601,7 +719,7 @@ def p_seen_function(p):
 
 def p_expression_id(p):
     """
-    expression : ID %prec WITHOUT_LEFT_PAREN
+    expression : ID
     """
     t = scope_manager.find_name(p[1])
     p[0] = IDExpNode(tuple2index(t))
@@ -609,10 +727,16 @@ def p_expression_id(p):
 
 def p_call_expression(p):
     """
-    expression : ID LEFT_PAREN expression_list RIGHT_PAREN
+    expression : expression LEFT_PAREN expression_list RIGHT_PAREN
     """
-    function_tuple = scope_manager.find_name(p[1])
-    p[0] = CallExpNode(tuple2index(function_tuple), p[3])
+    p[0] = CallExpNode(p[1], p[3])
+
+
+def p_array_expression(p):
+    """
+    expression : LEFT_BRACKET expression_list RIGHT_BRACKET
+    """
+    p[0] = ArrayExpNode(p[2])
 
 
 def p_expression_list(p):
@@ -628,6 +752,35 @@ def p_expression_list(p):
     else:
         p[0] = p[3]
         p[0].prepend_item(p[1])
+
+
+def p_map_element(p):
+    """
+    map_element_expression : expression COLON expression
+    """
+    p[0] = MapElementExpNode(p[1], p[3])
+
+
+def p_map_element_list(p):
+    """
+    map_element_list :  map_element_expression
+                      | map_element_expression COMMA map_element_list
+                      |
+    """
+    if len(p) == 1:
+        p[0] = MapElementListNode()
+    elif len(p) == 2:
+        p[0] = MapElementListNode(p[1])
+    else:
+        p[0] = p[3]
+        p[0].prepend_item(p[1])
+
+
+def p_map_expression(p):
+    """
+    expression : LEFT_BRACE map_element_list RIGHT_BRACE
+    """
+    p[0] = MapExpNode(p[2])
 
 
 def p_parameter_list(p):
@@ -656,7 +809,7 @@ def p_error(p):
 
 def generate_code(program: str):
     parser = yacc.yacc()
-    result = parser.parse(program)
+    result = parser.parse(program, debug=log)
     print("the JSON format is:")
     print(SyntaxTreeJSONEncoder(indent=4, separators=(',', ': ')).encode(result))
     code = result.emit_code()
