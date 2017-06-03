@@ -66,7 +66,7 @@ class Value:
             elif Value('str', 'prototype') in obj.value:
                 obj = obj.value[Value('str', 'prototype')]
             else:
-                raise ('item {} not exists!'.format(item))
+                raise KeyError('item {} not exists!'.format(item))
 
     def __setitem__(self, key, value):
         obj = self

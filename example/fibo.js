@@ -1,4 +1,3 @@
-
 print (function (base, n) {
     addFactory = function () {
         add = function (a, b) {
