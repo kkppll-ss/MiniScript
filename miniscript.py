@@ -1,6 +1,6 @@
 import sys
 
-import csparser
+import msparser
 import vm
 import labelconverter
 import pickle
@@ -17,7 +17,7 @@ def convert_label_recursive(code_obj: CodeObj):
 def compile(file_name: str, output_name: str):
     with open(file_name, 'r') as program_file:
         program = program_file.read()
-        code_obj = csparser.generate_code(program)
+        code_obj = msparser.generate_code(program)
         convert_label_recursive(code_obj)
         print('the generated code is:\n{}'.format(code_obj))
         output = open(output_name, 'wb')

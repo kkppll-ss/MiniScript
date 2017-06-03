@@ -7,7 +7,7 @@ import logging
 from copy import deepcopy
 from manager import ScopeManager
 from bytecode import *
-from cslexer import tokens
+from mslexer import tokens
 from value import Value, Function, CodeObj
 import labelconverter
 precedence = (
