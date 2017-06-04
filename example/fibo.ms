@@ -1,7 +1,7 @@
-fibonacci = function (n: int) {
+fibonacci = function (n: int, method: function) {
     if (n > 2)
     {
-        result =  fibonacci(n - 1) + fibonacci(n - 2)
+        result =  method(fibonacci(n - 1, method), fibonacci(n - 2, method))
     }
     else
     {
@@ -9,5 +9,8 @@ fibonacci = function (n: int) {
     }
     return result
 }
-print fibonacci(8)
+add = function(a: int, b: int){
+    return a + b
+}
+print fibonacci(8, add)
 return 0

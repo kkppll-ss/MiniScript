@@ -58,7 +58,7 @@ next_label = label_counter()
 class StatNode:
     def __init__(self):
         self.type = None  # type: str
-        self.children = None
+        self.children = None  # type: OrderedDict
 
     def emit_code(self) -> str:
         return NotImplemented
