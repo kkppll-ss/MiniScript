@@ -119,8 +119,39 @@ end""".format(self.const_list, self.name_list, self.code)
         return str(self)
 
 
+class Parameter:
+    def __init__(self, id_name: str, type_name: str):
+        self.id_name = id_name
+        self.type_name = type_name
+
+    def __str__(self):
+        return self.id_name + ': ' + self.type_name
+
+    def __repr__(self):
+        return str(self)
+
+
+class ParameterList:
+    def __init__(self, init_item: Parameter=None):
+        if not init_item:
+            self.parameters = []
+        else:
+            self.parameters = [init_item]
+
+    def prepend_item(self, item):
+        self.parameters.insert(0, item)
+
+    @property
+    def names(self):
+        return [parameter.id_name for parameter in self.parameters]
+
+    @property
+    def types(self):
+        return [parameter.type_name for parameter in self.parameters]
+
+
 class Function:
-    def __init__(self, parameter_list: [str], code_obj: CodeObj, lexical_depth: int):
+    def __init__(self, parameter_list: ParameterList, code_obj: CodeObj, lexical_depth: int):
         self.parameter_list = parameter_list
         self.code_obj = code_obj
         self.lexical_depth = lexical_depth

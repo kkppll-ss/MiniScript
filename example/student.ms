@@ -1,21 +1,21 @@
 Student = {
     "teacher": "fengyan",
-    "new": function(name){
+    "new": function(name: str){
         student = {}
         student.name = name
         student.prototype = Student
         return student
     },
-    "setName": function (self, name) {
+    "setName": function (self: table, name: str) {
         self.name = name return 0
     },
-    "setTeacher": function (self, teacher) {
+    "setTeacher": function (self: table, teacher: str) {
         self.teacher = teacher return 0
     }
 }
 Boy = {
     "prototype": Student,
-    "new": function (name) {
+    "new": function (name: str) {
         boy = Student.new(name)
         boy.prototype = Boy
         return boy

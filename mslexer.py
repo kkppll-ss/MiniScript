@@ -11,7 +11,11 @@ reserved_word = {
     'not': 'NOT',
     'break': 'BREAK',
     'function': 'FUNCTION',
-    'return': 'RETURN'
+    'return': 'RETURN',
+    'int': 'TYPE_INT',
+    'real': 'TYPE_REAL',
+    'str': 'TYPE_STRING',
+    'table': 'TYPE_TABLE'
 }
 
 tokens = [

@@ -206,7 +206,16 @@ class VirtualMachine(object):
         return self.return_value
 
     def call_function(self, func: Function, arguments: []):
-        call_args = dict(zip(func.parameter_list, arguments))
+        parameter_list = func.parameter_list
+        parameters = parameter_list.parameters
+        if len(parameters) != len(arguments):
+            raise VirtualMachineError('the length of parameter is {}, but the argument is {}'
+                                      .format(len(parameters), len(arguments)))
+        for parameter, argument in zip(parameters, arguments):
+            if parameter.type_name != argument.dtype:
+                raise TypeError('the parameter {} is type {}, but the argument is {}'
+                                .format(parameter.id_name, parameter.type_name, argument))
+        call_args = dict(zip(parameter_list.names, arguments))
         lexical_depth = func.lexical_depth
         frame = self.make_frame(func.code_obj, call_args)
         self.push_display(lexical_depth, frame)
@@ -339,7 +348,7 @@ class VirtualMachine(object):
     def byte_CALL_FUNCTION(self):
         func_value = self.current_frame.pop()
         func = func_value.value
-        parameter_len = len(func.parameter_list)
+        parameter_len = len(func.parameter_list.parameters)
         arguments = self.current_frame.popn(parameter_len)
         ret_value = self.call_function(func, arguments)
         self.current_frame.push(ret_value)

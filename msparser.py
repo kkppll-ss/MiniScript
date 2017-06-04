@@ -8,8 +8,7 @@ from copy import deepcopy
 from manager import ScopeManager
 from bytecode import *
 from mslexer import tokens
-from value import Value, Function, CodeObj
-import labelconverter
+from value import Value, Function, CodeObj, Parameter, ParameterList
 precedence = (
     ('nonassoc', 'INCOMPLETE_IF'),
     ('nonassoc', 'ELSE'),
@@ -33,21 +32,6 @@ logging.basicConfig(
     format = "%(filename)10s:%(lineno)4d:%(message)s"
 )
 log = logging.getLogger()
-
-
-class ParameterList:
-    def __init__(self, init_item=None):
-        if not init_item:
-            self.parameters = []
-        else:
-            self.parameters = [init_item]
-
-    def prepend_item(self, item):
-        self.parameters.insert(0, item)
-
-    def get_parameters(self):
-        return self.parameters
-
 current_parameter_list = ParameterList()
 scope_manager = ScopeManager()
 
@@ -696,7 +680,7 @@ def p_expression_function(p):
     """
     expression : FUNCTION LEFT_PAREN parameter_list RIGHT_PAREN seen_FUNCTION LEFT_BRACE statement_list RIGHT_BRACE
     """
-    parameter_list = p[3].get_parameters()
+    parameter_list = p[3]
     statement_list = p[7]
     code = statement_list.emit_code()
     function_obj = CodeObj(code, scope_manager.current_const_list, scope_manager.current_name_list)
@@ -713,7 +697,7 @@ def p_seen_function(p):
     seen_FUNCTION :
     """
     global current_parameter_list
-    scope_manager.new_scope(current_parameter_list.get_parameters())
+    scope_manager.new_scope(current_parameter_list.names)
     current_parameter_list = ParameterList()
 
 
@@ -783,10 +767,28 @@ def p_map_expression(p):
     p[0] = MapExpNode(p[2])
 
 
+def p_parameter(p):
+    """
+    parameter : ID COLON type
+    """
+    p[0] = Parameter(p[1], p[3])
+
+
+def p_type(p):
+    """
+    type : TYPE_INT
+         | TYPE_REAL
+         | TYPE_STRING
+         | FUNCTION
+         | TYPE_TABLE
+    """
+    p[0] = p[1]
+
+
 def p_parameter_list(p):
     """
-    parameter_list :  ID COMMA parameter_list
-                   | ID
+    parameter_list :  parameter COMMA parameter_list
+                   | parameter
                    |
     """
     global current_parameter_list
@@ -817,7 +819,7 @@ def generate_code(program: str):
 
 
 def main():
-    program_filename = 'test.js'
+    program_filename = 'example/fibo.ms'
     with open(program_filename, 'r') as program_file:
         program = program_file.read()
         code = generate_code(program)
