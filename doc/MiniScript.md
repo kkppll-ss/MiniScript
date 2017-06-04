@@ -1,10 +1,19 @@
+# MiniScript： 编译原理大程报告
 ## 简介
 
 MiniScript是一个简单，灵活，强大的语言。它的主要灵感来源于JavaScript，也吸收了Python，Lua等语言的做法。
 
+我们交上来的文件里面，主程序是miniscript.py，你可以用一个命令行参数去运行这个程序，参数就是文件名，然后我们的程序可以运行出结果。你必须先安装Python3（要求3.5以上），然后安装PLY这个Python库。
+
+mslexer.py文件是做词法分析的。msparser.py是做语法分析，语法制导翻译和语法生成的。vm.py是虚拟机，value.py, manager.py和其他文件是辅助文件。
+
+测试用例在example目录下，其中hello.ms做了一个hello world，fibo.ms做了一个斐波那契，recursive_fibo.ms做了一个递归的斐波那契，object_fibo.ms做了一个面向对象的斐波那契。prototype.ms展示了如何使用原型继承，student.ms做了一个Student类和它的两个实例，展示了如何利用原型继承来模拟类-对象的继承结构。
+
+郑雅心和吴佳佳负责了词法分析和语法分析，邹遥负责了语法制导翻译，代码生成和虚拟机。
+
 ### 简单
 
-它简单，因为整个语言的类型系统非常小巧：MiniScript中只有五种类型：int, real, str, function和table。没有array或者list，尽管你可以写[1, 2, "hello"]这样的表达式。因为你写的[1, 2, "hello"]会被编译器转换成{0: 1, 1:2, 2: "hello"}。也就是说，数组其实也就是一个下标到元素的映射而已。这样的思想借鉴自Lua。MiniScript中也没有结构体或者类，因为你可以用创建table一样的方法来创建一个对象：
+它简单，因为整个语言的类型系统非常小巧：MiniScript中只有五种类型：int, real, str, function和table。没有array或者list，尽管你可以写`[1, 2, "hello"]`这样的表达式。因为你写的`[1, 2, "hello"]`会被编译器转换成`{0: 1, 1:2, 2: "hello"}`。也就是说，数组其实也就是一个下标到元素的映射而已。这样的思想借鉴自Lua。MiniScript中也没有结构体或者类，因为你可以用创建table一样的方法来创建一个对象：
 
 ```typescript
 student = {
@@ -34,7 +43,7 @@ print student["age"]
 return 0
 ```
 
-然而引入点运算符，让我们的语言看上去有了面向对象的特征。在C++或者Java这样的语言里面，数组（或者高级一点的vector， ArrayList），table（也就是标准库里面的map）以及对象（由class派生出来的实例）是截然不同的。然而MiniScript吸收了JavaScript和Lua的经验，将它们统一为一种数据类型，极大地降低了语言的复杂度。
+然而引入点运算符，让我们的语言看上去有了面向对象的特征。在C++或者Java这样的语言里面，数组（或者高级一点的`vector`， `ArrayList`），`table`（也就是标准库里面的`map`）以及对象（由class派生出来的实例）是截然不同的。然而MiniScript吸收了JavaScript和Lua的经验，将它们统一为一种数据类型，极大地降低了语言的复杂度。
 
 ### 灵活
 
@@ -48,7 +57,7 @@ MiniScript灵活，是因为它提供了非常宽松的语法，让你随心所�
 
 MiniScript强大，是因为你不但可以创建对象，还可以使用原型继承的方式来拓展对象。基于原型的面向对象程序设计是面向对象的一个流派，由self语言开创，现在比较流行的语言里面，JavaScript和Lua采用这种设计方式。
 
-这一段代码用原型继承模拟了传统的class - object的继承，创建了两个Student对象，这两个Student各自有各自的name成员，但是共享teacher成员。
+这一段代码用原型继承模拟了传统的class - object的继承，创建了两个`Student`对象，这两个`Student`各自有各自的`name`成员，但是共享`teacher`成员。
 
 ```typescript
 Student = {
@@ -114,6 +123,90 @@ int *p[3];
 我们整个程序的执行流程是：用户输入的程序被翻译成虚拟机上的代码，然后虚拟机运行这一段代码。换句话说，我们做的这个语言和Java,C#没有什么区别，它的基本运行方式都是先从程序生成字节码，再在虚拟机上运行字节码。不同之处在于我们的字节码设计参考的是Python字节码，它比JVM字节码和.NET上面的字节码更加高层，提供了更加高的抽象。
 
 我们对“编译”和“解释”的理解是，只要一个语言的运行过程中有把程序代码翻译成某种字节码或者机器指令的过程，这个语言就被编译了。从这个角度来看，包括JavaScript和Python在内的大部分语言都是编译执行的，只有少数如Shell之类的语言是纯解释执行的。
+## 词法规则
+
+### 关键字
+
+根据我们的语言所需，定义了如下关键字，按照ply的lex语法规定，将关键字保存在reserved\_word中。
+
+```python
+reserved_word = {
+  'for': 'FOR',
+  'while': 'WHILE',
+  'if': 'IF',
+  'else': 'ELSE',
+  'print': 'PRINT',
+  'and': 'AND',
+  'or': 'OR',
+  'not': 'NOT',
+  'break': 'BREAK',
+  'function': 'FUNCTION',
+  'return': 'RETURN'
+}
+```
+
+### 符号标记
+
+根据ply的语法规则，将语法中所用到的符号定义对应的标记符号TOKENS。标记TOKENS定义在最前面，以列表的形式存储。每种TOKEN用一个正则表达式规则来表示，每个规则需要以"t\_"开头声明，表示该声明是对标记的规则定义。对于简单的标记，可以直接定义：
+
+ ```python
+  t_PLUS = r'\+'
+  t_MINUS = r'-'
+  t_TIMES = r'\*'
+  t_DIVIDE = r'/'
+  t_LEFT_BRACE = r'\{'
+  t_RIGHT_BRACE = r'\}'
+  t_LEFT_BRACKET = r'\['
+  t_RIGHT_BRACKET = r'\]'
+  t_LEFT_PAREN = r'\('
+  t_RIGHT_PAREN = r'\)'
+  t_ASSIGN = r'='
+  t_SEMICOLON = r';'
+  t_EQUAL = r'=='
+  t_NOT_EQUAL = r'!='
+  t_GREATER = r''
+  t_LESS = r''
+  t_GREATER_EQUAL = r'='
+  t_LESS_EQUAL = r'='
+  t_COMMA = r','
+  t_COLON = r'\:'
+  t_DOT = r'\.'
+ ```
+
+
+
+对于需要执行动作的符号标记，如整数、实数、字符串和ID等TOKENS，将规则写成一个方法。方法总是需要接受一个LexToken实例的参数，该实例有一个t.type的属性（字符串表示）来表示标记的类型名称，t.value是标记值（匹配的实际的字符串）。方法可以在方法体里面修改这些属性。但是，如果这样做，应该返回结果token，否则，标记将被丢弃。
+定义如下：
+
+```python
+def t_INT(t):
+    r'\d+'
+    t.value = int(t.value)
+    return t
+
+def t_REAL(t):
+    r'[0-9]*\.[0-9]+'
+    t.value = float(t.value)
+    return t
+
+def t_STRING(t):
+    r'"[\^"]*"'
+    t.value = t.value[1:len(t.value) - 1]
+    return t
+
+def t_ID(t):
+    r'[a-zA-Z_][a-zA-Z_0-9]*'
+    t.type = reserved_word.get(t.value, 'ID') # Check for reserved words
+    return t
+```
+
+### 匹配规则顺序
+
+在lex内部，lex.py用re模块处理匹配模式，匹配顺序如下：
+
+1\. 所有由方法定义的标记规则，按照他们的出现顺序依次加入
+
+2\. 由字符串变量定义的标记规则按照其正则表达式长度倒序后，依次加入
 
 ## 语法规则
 
@@ -140,7 +233,7 @@ if (a = 0)
 
 #### 常量表达式
 
-常量表达式就表示一个常量，所谓的常量包括整数，实数，字符串和函数。比如数字3是一个常量表达式，函数定义式
+常量表达式就表示一个常量，所谓的常量包括整数，实数，字符串和函数。比如数字`3`是一个常量表达式，函数定义式
 
 ```typescript
 function(a: int, b: int){
@@ -264,7 +357,7 @@ expression : LEFT_BRACKET expression_list RIGHT_BRACKET
 
 #### table表达式
 
-table表达式表示一个table，这是我们这个语言里面的核心数据结构。比如说下面这些都是table表达式。
+table表达式表示一个`table`，这是我们这个语言里面的核心数据结构。比如说下面这些都是table表达式。
 
 ```javascript
 {"name": "zouyao", "age": 21}
@@ -440,14 +533,14 @@ expression_statement : expression
 b - 3
 ```
 
-到底是parse成b一个表达式语句，-3一个表达式语句，还是b - 3 一整个parse成一个表达式语句呢？由于yacc在出现shift-reduce冲突的时候默认的行为是shift，所以运行出来的结果是后者。这也就意味着你可能会写出这样的代码
+到底是parse成`b`一个表达式语句，`-3`一个表达式语句，还是`b - 3` 一整个parse成一个表达式语句呢？由于yacc在出现shift-reduce冲突的时候默认的行为是shift，所以运行出来的结果是后者。这也就意味着你可能会写出这样的代码
 
 ```javascript
 b
 -f(3)
 ```
 
-期望编译器parse出两个表达式语句。然而编译器会把b - f(3)整个当做一个表达式语句parse出来。
+期望编译器parse出两个表达式语句。然而编译器会把`b - f(3)`整个当做一个表达式语句parse出来。
 
 #### print语句
 
@@ -471,7 +564,7 @@ compound_statement : LEFT_BRACE statement_list RIGHT_BRACE
 {}
 ```
 
-的时候，应该把它判断成是一个空的复合语句还是一个空的table表达式呢？这个歧义其实无关紧要，因为不管parse成什么，一对空的大括号都不会对程序的运行产生影响。
+的时候，应该把它判断成是一个空的复合语句还是一个空的table表达式呢？这个歧义其实无关紧要，因为不管parse成什么，一对空的大括号对于整个程序而言一点微小的影响都没有。
 
 #### 语句列表
 
@@ -492,7 +585,7 @@ program : statement_list
 
 ### 函数
 
-为了支持函数，我们增加了一些其他的语法元素。首先需要明确的是，在我们的语言里面，函数就是一个常量。我们定义一个函数add的语法是
+为了支持函数，我们增加了一些其他的语法元素。首先需要明确的是，在我们的语言里面，函数就是一个常量。我们定义一个函数`add`的语法是
 
 ```typescript
 add = function(a: int, b: int){
@@ -515,7 +608,7 @@ type : TYPE_INT
      | TYPE_TABLE
 ```
 
-其中，TYPE_INT, TYPE_REAL, TYPE_STRING, FUNCTION_TYPE_TABLE分别表示关键字int，real, str, function 和 table。
+其中，`TYPE_INT`, `TYPE_REAL`, `TYPE_STRING`, `FUNCTION_TYPE_TABLE`分别表示关键字`int`，`real`, `str`, `function` 和 `table`。
 
 ## 语法制导翻译
 
@@ -523,7 +616,7 @@ type : TYPE_INT
 
 ### 语法树
 
-我们提到过，整个语言有两个语法元素：表达式和语句。所以我们的语法树有两种节点，语句节点和表达式节点。但是，有的时候我们需要处理一些list,比如说复合语句里面有statement_list，而函数传递参数的时候有expression_list。所以我们又定义了一个列表节点
+我们提到过，整个语言有两个语法元素：表达式和语句。所以我们的语法树有两种节点，语句节点和表达式节点。但是，有的时候我们需要处理一些list,比如说复合语句里面有`statement_list`，而函数传递参数的时候有`expression_list`。所以我们又定义了一个列表节点
 
 ```python
 class StatNode:
@@ -548,7 +641,7 @@ class ListNode:
     ...
 ```
 
-语法树上所有的节点，必定是这三个类的子类的实例。我们可以看到每一个类都有一个type字段，这是为了表达某个节点属于哪个子类。同时，每一个类都有一个children字段。StatNode和ExpNode的children是一个有序字典，而ListNode的children是一个列表。每一个类都有一个emit_code方法，用于做代码生成。
+语法树上所有的节点，必定是这三个类的子类的实例。我们可以看到每一个类都有一个type字段，这是为了表达某个节点属于哪个子类。同时，每一个类都有一个`children`字段。`StatNode`和`ExpNode`的`children`是一个有序字典，而`ListNode`的`children`是一个列表。每一个类都有一个`emit_code`方法，用于做代码生成。
 
 一般情况下，一个语法生成式就对应一个树节点的生成。我们看几个例子。比如说，我们以整数常量表达式为例
 
@@ -567,11 +660,11 @@ def p_expression_int(p):
     p[0] = ConstExpNode(index)
 ```
 
-我们发现，ConstExpNode这个节点里面的children是一个index。这个index表示这个const量在某一个列表中的下标。为什么我们不直接把常量值本身作为children呢？对于整数，直接以常量值作为children是可以的。但是如果这个常量是一个字符串甚至一个函数的话，存一个index是更好的选择。
+我们发现，`ConstExpNode`这个节点里面的`children`是一个index。这个index表示这个const量在某一个列表中的下标。为什么我们不直接把常量值本身作为children呢？对于整数，直接以常量值作为children是可以的。但是如果这个常量是一个字符串甚至一个函数的话，存一个index是更好的选择。
 
-在语法分析器parse到一个整数的时候，它以某种我们会在下一节讲述的方法得到这个整数常量的index，然后构造一个ConstExpNode。
+在语法分析器parse到一个整数的时候，它以某种我们会在下一节讲述的方法得到这个整数常量的index，然后构造一个`ConstExpNode`。
 
-同样的事情发生在标识符表达式上。注意到IDExpNode里面存放的也是这个标识符的某种下标，而不是这个标识符本身
+同样的事情发生在标识符表达式上。注意到`IDExpNode`里面存放的也是这个标识符的某种下标，而不是这个标识符本身
 
 ```python
 class IDExpNode(ExpNode):
@@ -588,7 +681,7 @@ def p_expression_id(p):
     p[0] = IDExpNode(index)
 ```
 
-而当语法分析器看到一个二元表达式的时候，它就会按照语法规则生成一个BinaryExpNode，就像下面这样
+而当语法分析器看到一个二元表达式的时候，它就会按照语法规则生成一个`BinaryExpNode`，就像下面这样
 
 ```python
 class BinaryExpNode(ExpNode):
@@ -633,7 +726,7 @@ def p_for_statement(p):
     p[0] = ForStatNode(p[3], p[5], p[7], p[9])
 ```
 
-整个程序是一个ProgramNode，为了方便，虽然语义上ProgramNode不应该是StatNode的子类，我们还是让它继承自StatNode。它的children是一个StatListNode。
+整个程序是一个`ProgramNode`，为了方便，虽然语义上`ProgramNode`不应该是`StatNode`的子类，我们还是让它继承自`StatNode`。它的`children`是一个`StatListNode`。
 
 ```python
 class ProgramNode(StatNode):
@@ -649,7 +742,7 @@ def p_program(p):
     p[0] = ProgramNode(p[1])
 ```
 
-列表节点的生成也很简单。我们这里有三种列表节点，StatListNode, ExpListNode和MapElementListNode分别对应statement_list, expression_list和map_element_list。map_element_list是用于table这种数据结构的。我们以StatListNode为例讲解。
+列表节点的生成也很简单。我们这里有三种列表节点，`StatListNode`, `ExpListNode`和`MapElementListNode`分别对应`statement_list`, `expression_list`和`map_element_list`。`map_element_list`是用于table这种数据结构的。我们以`StatListNode`为例讲解。
 
 ```python
 class ListNode:
@@ -683,7 +776,7 @@ def p_statement_list(p):
         p[0].prepend_item(p[1])
 ```
 
-我们发现，语法分析器parse statement_list的方法就是：看到一个新的statement就利用prepend_item把它加入到原有的StatListNode的children里面。语法分析器分析expression_list和map_element_list的过程也基本相似。
+我们发现，语法分析器parse `statement_list`的方法就是：看到一个新的`statement`就利用`prepend_item`把它加入到原有的`StatListNode`的`children`里面。语法分析器分析`expression_list`和`map_element_list`的过程也基本相似。
 
 由于其他表达式和语句的语法制导翻译过程基本类似，这里我就不再赘述了。下面我来介绍我们编译器中关键的一部分：作用域规则。这涉及到上下文有关的语法制导翻译，这也是我们整个编译器里面唯一的语义分析。事实上，我们这个语言不在编译时检查类型，所以编译时做的唯一语义分析就是确定作用域。
 
@@ -702,7 +795,7 @@ f = function(n: int) {
 }
 ```
 
-上面是一个函数的定义。我们可以发现，ret这个变量是在if语句里面定义的，但是你可以在if语句外面使用它。因为我们的MiniScript是以函数作为作用域单位的，在一个if语句块里面定义变量和在整个函数里面定义变量没有什么区别。
+上面是一个函数的定义。我们可以发现，`ret`这个变量是在if语句里面定义的，但是你可以在if语句外面使用它。因为我们的MiniScript是以函数作为作用域单位的，在一个if语句块里面定义变量和在整个函数里面定义变量没有什么区别。
 
 ```typescript
 f = function(base: int, n: int) {
@@ -721,9 +814,9 @@ f(2, 3)
 return 0
 ```
 
-这是一个完整的MiniScript程序，这个程序里面我们定义了一个函数，把这个函数赋值给变量f，然后在这个函数里面定义了另一个函数g。注意，函数g使用了函数f的本地变量base。我们的语言里面，内部函数可以使用外部函数的本地变量。
+这是一个完整的MiniScript程序，这个程序里面我们定义了一个函数，把这个函数赋值给变量`f`，然后在这个函数里面定义了另一个函数`g`。注意，函数`g`使用了函数f的本地变量`base`。我们的语言里面，内部函数可以使用外部函数的本地变量。
 
-当你在某一个函数f里面使用一个标识符n的时候，如果仅仅是读它的值，没有写诸如n = 2之类的赋值语句，我们的语言会先在f里面找这个n。如果没有找到而f定义在另一个函数g里面，它会在g里面找这个标识符n。如果还没有找到则继续向外寻找，一直到找到全局区域为止。如果全局区域里面也没有这个n，则会报一个错误。相反，如果你对n做了赋值，我们的语言会先去寻找n的定义，从f函数内部找到它外部的函数g，一直找到全局区域。如果找到了，就会对找到的那个n进行赋值。如果没找到，就会在当前函数f的作用域内创建一个标识符n，进行赋值。
+当你在某一个函数`f`里面使用一个标识符`n`的时候，如果仅仅是读它的值，没有写诸如`n = 2`之类的赋值语句，我们的语言会先在`f`里面找这个`n`。如果没有找到`n`而`f`定义在另一个函数`g`里面，它会在`g`里面找这个标识符`n`。如果还没有找到则继续向外寻找，一直到找到全局区域为止。如果全局区域里面也没有这个`n`，则会报一个错误。相反，如果你对`n`做了赋值，我们的语言会先去寻找`n`的定义，从`f`函数内部找到它外部的函数`g`，一直找到全局区域。如果找到了，就会对找到的那个`n`进行赋值。如果没找到，就会在当前函数`f`的作用域内创建一个标识符`n`，进行赋值。
 
 这样一种作用域规则是如何实现的呢？这就涉及到我们的编译器传递给虚拟机的字节码。编译器传给虚拟机的字节码是这样定义的：
 
@@ -735,7 +828,7 @@ class CodeObj:
         self.name_list = name_list
 ```
 
-code表示编译出来的代码，const_list表示常量列表，name_list表示名字列表（也就是标识符列表）。编译器传给虚拟机的就是这样一个CodeObj对象。同时，我们说函数是一个值，表示一个函数的值是这么定义的：
+`code`表示编译出来的代码，`const_list`表示常量列表，`name_list`表示名字列表（也就是标识符列表）。编译器传给虚拟机的就是这样一个`CodeObj`对象。同时，我们说函数是一个值，表示一个函数的值是这么定义的：
 
 ```python
 class Function:
@@ -745,15 +838,15 @@ class Function:
         self.lexical_depth = lexical_depth
 ```
 
-函数的三个字段分别是参数列表，目标代码和函数的词法深度。code_obj字段的类型就是上面的CodeObj类。也就是说，每一个函数里面也有一个CodeObj对象。这就意味着整个程序里面有一个name_list，每一个函数里面也有一个name_list。name_list的类型就是一个str数组。比如说，在上面那一段程序中，全局的name_list是['f']，这是一个被赋值了一个函数的变量；f的name_list是['base', 'n', 'g']，g的name_list是['n'].
+函数的三个字段分别是参数列表，目标代码和函数的词法深度。`code_obj`字段的类型就是上面的`CodeObj`类。也就是说，每一个函数里面也有一个`CodeObj`对象。这就意味着整个程序里面有一个`name_list`，每一个函数里面也有一个`name_list`。`name_list`的类型就是一个`str`数组。比如说，在上面那一段程序中，全局的`name_list`是`['f']`，这是一个被赋值了一个函数的变量；`f`的`name_list`是`['base', 'n', 'g']`，`g`的`name_list`是`['n']`.
 
-在上一节我们说过，IDExpNode的children是一个index，这个index就包含了两部分信息：一是这个标识符处于哪个作用域里面，二是这个标识符位于那个作用域的name_list的什么位置。我们用一个tuple来表示这两个信息，将这个tuple命名为(depth, index)，其中depth是这个标识符所处的作用域的词法深度。词法深度就是这个标识符所在的函数的嵌套层次。比如说如果你在程序里面定义了函数f，f里面定义了函数g，那么f的嵌套层次是1，g的嵌套层次是2.于是，所有在全局区定义的标识符的词法深度都是0，在f里面定义的标识符的词法深度是1，在g里面的是2.举一个例子，在上面的例子里面，g引用了n和base这两个标识符，其中n是这个函数g的本地变量，因为g在嵌套层次的第二层，所以n的作用域词法深度是2.因为base是g外面的函数f的本地变量，而f在嵌套深度的第一层，所以base的作用域词法深度是1.
+在上一节我们说过，`IDExpNode`的`children`是一个index，这个index就包含了两部分信息：一是这个标识符处于哪个作用域里面，二是这个标识符位于那个作用域的name_list的什么位置。我们用一个tuple来表示这两个信息，将这个tuple命名为(depth, index)，其中depth是这个标识符所处的作用域的词法深度。词法深度就是这个标识符所在的函数的嵌套层次。比如说如果你在程序里面定义了函数f，f里面定义了函数g，那么f的嵌套层次是1，g的嵌套层次是2.于是，所有在全局区定义的标识符的词法深度都是0，在f里面定义的标识符的词法深度是1，在g里面的是2.举一个例子，在上面的例子里面，g引用了n和base这两个标识符，其中n是这个函数g的本地变量，因为g在嵌套层次的第二层，所以n的作用域词法深度是2.因为base是g外面的函数f的本地变量，而f在嵌套深度的第一层，所以base的作用域词法深度是1.
 
-这个tuple的第二个字段是index，也就是该标识符在它所在的那个作用域的name_list里的下标。比如说，假设g的name_list是['n']，那么g在引用n这个标识符的时候，形成的tuple就是(2, 0),表示n是词法深度为2的那个作用域（也就是g的作用域）的name_list的第0个元素。而g里面引用base的时候，所形成的tuple是(1, 0)，表示base这个标识符是词法深度为1的那个作用域（也就是f的作用与）的nale_list的第0个元素。
+这个tuple的第二个字段是index，也就是该标识符在它所在的那个作用域的`name_list`里的下标。比如说，假设g的`name_list`是`['n']`，那么g在引用n这个标识符的时候，形成的tuple就是(2, 0),表示n是词法深度为2的那个作用域（也就是g的作用域）的`name_list`的第0个元素。而g里面引用base的时候，所形成的tuple是(1, 0)，表示base这个标识符是词法深度为1的那个作用域（也就是f的作用与）的nale_list的第0个元素。
 
-IDExpNode的children就是由这样一个tuple变化过来的。因为字节码不允许带有一个tuple作为参数，所以我我们把这个tuple变成一个整数存到IDExpNode里面，具体的方法是`IDExpNode.children['index'] = tuple.depth << 8 + tuple.index`。
+`IDExpNode`的children就是由这样一个tuple变化过来的。因为字节码不允许带有一个tuple作为参数，所以我我们把这个tuple变成一个整数存到`IDExpNode`里面，具体的方法是`IDExpNode.children['index'] = tuple.depth << 8 + tuple.index`。
 
-为了能在parse的时候获得某个标识符的词法深度和他在对应的作用域的name_list里面的下标，我们建立了一个叫做ScopeManeger的类。这个类管理这这个程序里面所有的name_list。当parser看到一个函数的时候，它就为那个函数建立一个新的name_list。同时，这个类还为每一个name_list维护者一个prev_name_list，表示它的上一层作用域的name_list。比如说，在我们的例子里面，函数g的prev_name_list就是函数f的name_list，而函数f的prev_name_list就是全局的name_list。这样，我们在某个函数里面看到一个变量的时候，可以利用这些信息确定这个变量来自哪一个scope。注意我们的语言不支持JavaScript风格的闭包，所以对于每一个标识符，只需要记录它位于哪个词法深度和它位于他所在的作用域的name_list的哪个位置就可以了。
+为了能在parse的时候获得某个标识符的词法深度和他在对应的作用域的name_list里面的下标，我们建立了一个叫做`ScopeManeger`的类。这个类管理这这个程序里面所有的`name_lis`t。当parser看到一个函数的时候，它就为那个函数建立一个新的`name_list`。同时，这个类还为每一个`name_list`维护着一个`prev_name_list`，表示它的上一层作用域的`name_list`。比如说，在我们的例子里面，函数g的`prev_name_list`就是函数f的`name_list`，而函数f的`prev_name_list`就是全局的`name_list`。这样，我们在某个函数里面看到一个变量的时候，可以利用这些信息确定这个变量来自哪一个scope。注意我们的语言不支持JavaScript风格的闭包，所以对于每一个标识符，只需要记录它位于哪个词法深度和它位于他所在的作用域的`name_list`的哪个位置就可以了。
 
 虚拟机有两种方法在运行时根据这些信息寻找到所需要的变量，第一种是为每一个函数frame维护一个static link，第二种是维护一个全局的display数组。我们采用的是第二种方法。关于display数组，我记得我们有一道习题是有关它的，所以这里不再赘述。
 
