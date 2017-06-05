@@ -9,7 +9,6 @@ mslexer.py文件是做词法分析的。msparser.py是做语法分析，语法�
 
 测试用例在example目录下，其中hello.ms做了一个hello world，fibo.ms做了一个斐波那契，recursive_fibo.ms做了一个递归的斐波那契，object_fibo.ms做了一个面向对象的斐波那契。prototype.ms展示了如何使用原型继承，student.ms做了一个Student类和它的两个实例，展示了如何利用原型继承来模拟类-对象的继承结构。
 
-郑雅心和吴佳佳负责了词法分析和语法分析，邹遥负责了语法制导翻译，代码生成和虚拟机。
 
 ### 简单
 
