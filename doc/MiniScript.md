@@ -984,9 +984,9 @@ class Function:
 
 ### 代码生成操作
 
-为堆栈式虚拟机生成代码非常简单，基本上只需要对语法树进行遍历就可以了。我们说过，所有的节点都继承自StatNode, ExpNode或者ListNode，而它们都定义了emit_code这个接口。所以，代码生成的过程，其实就是整个语法树emit_code的过程。
+为堆栈式虚拟机生成代码非常简单，基本上只需要对语法树进行遍历就可以了。我们说过，所有的节点都继承自`StatNode`, `ExpNode`或者`ListNode`，而它们都定义了`emit_code`这个接口。所以，代码生成的过程，其实就是整个语法树`emit_code`的过程。
 
-比如说，ConstExpNode和IDExpNode的代码生成是这样的
+比如说，`ConstExpNode`和`IDExpNode`的代码生成是这样的
 
 ```python
 class ConstExpNode(ExpNode):
